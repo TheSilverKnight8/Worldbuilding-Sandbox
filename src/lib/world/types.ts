@@ -85,6 +85,37 @@ export interface WorldRecord {
   locked?: boolean;
 }
 
+/** The image under the map (made in Nortantis), until Caleb removes it. */
+export interface Backdrop {
+  blobId: string;
+  /** Size of the image in pixels. */
+  width: number;
+  height: number;
+  /** The file it came from, to show in the app. */
+  fileName: string;
+}
+
+/**
+ * The map's data layer (Stage 2). The map is a grid of cells. Two grids are stored as
+ * blobs, row by row from the top left:
+ *
+ * - elevation: Int16 meters above sea level. A cell is land when its elevation is above
+ *   0 and ocean otherwise, so the coastline is where elevation crosses sea level.
+ * - biomes: Uint8 per cell, an index into `biomeSlots` (0 means no biome).
+ *
+ * This is the painted base layer. Map items (Stage 4) add their effects on top.
+ */
+export interface MapInfo {
+  /** Grid size in cells. */
+  width: number;
+  height: number;
+  elevationBlob: string;
+  biomeBlob: string;
+  /** Biome record IDs by grid index. Slot 0 is always null (no biome); a deleted biome leaves its slot null. */
+  biomeSlots: (string | null)[];
+  backdrop: Backdrop | null;
+}
+
 /** One world: everything except its blobs. */
 export interface WorldDoc {
   id: string;
@@ -93,6 +124,17 @@ export interface WorldDoc {
   createdAt: string;
   updatedAt: string;
   records: Record<string, WorldRecord>;
+  /** null until the map is set up. */
+  map: MapInfo | null;
+}
+
+/** Stage 2 biome fields. Stage 3 adds resistance, major resources and hostility. */
+export type Realm = 'land' | 'ocean';
+export interface BiomeFields {
+  /** Whether the biome goes on land cells or ocean cells. The painting tools read it. */
+  realm: Realm;
+  /** Map color, #rrggbb. */
+  color: string;
 }
 
 /** What the world list on Home needs, kept apart so Home does not load whole worlds. */

@@ -11,5 +11,6 @@
 - Up to 3 worlds (`MAX_WORLDS` in `src/config.ts`). Creating or importing a fourth is refused with a message to delete one first.
 - The data shape in `src/lib/world/types.ts` was agreed with Caleb and is costly to change once material is entered: records with an ID and a kind, links by ID only, optional free write and images, `Settable` for anything the app or the simulation works out, blobs stored apart from records. Build on it; ask before changing it.
 - Every stored world and every exported file carries `format` and `version`. Changing what is saved means raising `FORMAT_VERSION` in `src/lib/world/format.ts` and teaching `upgrade()` to bring older worlds forward. Never break old worlds or old export files.
-- Every change to the open world goes through `updateWorld()` in `src/lib/store.ts`, which saves it.
+- Every change to the open world goes through `updateWorld()` in `src/lib/store.ts`, which saves it. Map painting changes the grids in place (`src/lib/map/paint.ts`), calls `emitLayers()` for the renderer and `layersEdited()` when a stroke ends.
+- The map's elevation grid is also its coastline: above 0 m is land. Biomes have a `realm` (land or ocean) and only go on matching cells. The image under the map (from Nortantis) is temporary by Caleb's wish: the app's own drawing of land and ocean must stand on its own without it.
 - `npm run typecheck` and `npm run build` must pass.

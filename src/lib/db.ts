@@ -82,6 +82,16 @@ export async function writeWorld(meta: WorldMeta, stored: StoredDoc): Promise<vo
   return finished(tx);
 }
 
+/** Saves a world's list entry and doc together with some of its blobs (e.g. the map grids), all or nothing. */
+export async function saveWorld(meta: WorldMeta, stored: StoredDoc, blobs: WorldBlob[]): Promise<void> {
+  const db = await open();
+  const tx = db.transaction(['worlds', 'docs', 'blobs'], 'readwrite');
+  tx.objectStore('worlds').put(meta);
+  tx.objectStore('docs').put(stored);
+  for (const b of blobs) tx.objectStore('blobs').put(b);
+  return finished(tx);
+}
+
 /** Adds a whole world at once (import), blobs included. Either all of it is saved or none of it. */
 export async function addWorld(meta: WorldMeta, stored: StoredDoc, blobs: WorldBlob[]): Promise<void> {
   const db = await open();

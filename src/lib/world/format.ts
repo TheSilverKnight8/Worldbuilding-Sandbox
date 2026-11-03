@@ -1,27 +1,46 @@
-import { RECORD_KINDS, type FieldValue, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
+import { RECORD_KINDS, type Backdrop, type FieldValue, type MapInfo, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
 
 // Every world carries a format version, both in this browser's storage and in an
 // exported file. When the shape of a world changes, FORMAT_VERSION goes up and
 // `upgrade` learns to bring older worlds forward, so a world saved today, or a file
 // exported today, still opens later. Never break old worlds.
+//
+// Versions:
+//   1  Stage 1: worlds and records.
+//   2  Stage 2: the map (MapInfo), with its grids as blobs.
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
 
 export type Parsed<T> = { ok: true; data: T } | { ok: false; reason: string };
 
-/** Brings an older world up to the current format, one version at a time. Version 1 is the first, so there is nothing to do yet. */
-function upgrade(raw: Record<string, unknown>, _from: number): Record<string, unknown> {
-  return raw;
+/** Brings an older world up to the current format, one version at a time. */
+function upgrade(raw: Record<string, unknown>, from: number): Record<string, unknown> {
+  let o = raw;
+  // 1 -> 2: worlds from Stage 1 have no map yet.
+  if (from < 2) o = { ...o, map: null };
+  return o;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const isDate = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
+const isSize = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0 && (v as number) <= 8192;
 const KINDS = new Set<string>(RECORD_KINDS);
+
+function readMap(v: unknown): MapInfo | null {
+  const m = rec(v);
+  if (!isSize(m.width) || !isSize(m.height) || !isStr(m.elevationBlob) || !isStr(m.biomeBlob)) return null;
+  const slots = Array.isArray(m.biomeSlots) ? m.biomeSlots.slice(0, 256).map((s, i) => (i > 0 && isStr(s) ? s : null)) : [];
+  if (!slots.length) slots.push(null);
+  const b = rec(m.backdrop);
+  const backdrop: Backdrop | null =
+    isStr(b.blobId) && isSize(b.width) && isSize(b.height) ? { blobId: b.blobId, width: b.width, height: b.height, fileName: isStr(b.fileName) ? b.fileName : 'Backdrop image' } : null;
+  return { width: m.width, height: m.height, elevationBlob: m.elevationBlob, biomeBlob: m.biomeBlob, biomeSlots: slots, backdrop };
+}
 
 /**
  * Checks a world (from storage or a file) and returns it in the current format.
@@ -53,6 +72,7 @@ export function readWorld(raw: unknown, version: number): Parsed<WorldDoc> {
       createdAt: isDate(o.createdAt) ? o.createdAt : now,
       updatedAt: isDate(o.updatedAt) ? o.updatedAt : now,
       records,
+      map: readMap(o.map),
     },
   };
 }

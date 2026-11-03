@@ -1,15 +1,16 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router';
-import { AlertTriangle, ArrowLeft, Globe2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, X } from 'lucide-react';
 import { ButtonLink, Spinner } from '../components/ui';
-import { closeWorld, openWorld, useApp } from '../lib/store';
+import { closeWorld, dismissNotice, openWorld, useApp } from '../lib/store';
+import { MapEditor } from '../map/MapEditor';
+import { MapSetup } from '../map/MapSetup';
 
-const dateFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
-
-/** Inside one world. Stage 1 opens and saves it; the map and everything on it come in the next stages. */
+/** Inside one world: the map (or setting it up). */
 export function WorldPage() {
   const { id = '' } = useParams();
   const open = useApp((s) => s.open);
+  const notice = useApp((s) => s.notice);
 
   useEffect(() => {
     void openWorld(id);
@@ -19,15 +20,17 @@ export function WorldPage() {
 
   if (open.kind === 'ready' && open.world.id === id)
     return (
-      <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-        <div className="max-w-lg animate-rise">
-          <span className="mx-auto flex size-14 items-center justify-center rounded-xl bg-navy text-on-accent">
-            <Globe2 className="size-7" />
-          </span>
-          <h1 className="mt-5 text-5xl">{open.world.name}</h1>
-          <p className="mt-2 text-muted">Created {dateFormat.format(new Date(open.world.createdAt))}</p>
-          <p className="mt-6 text-sm text-muted">The map comes in Stage 2: the backdrop image, then painting land, ocean and biomes.</p>
-        </div>
+      <div className="relative h-full">
+        {open.world.map ? <MapEditor world={open.world} map={open.world.map} /> : <MapSetup />}
+        {notice && (
+          <div role="status" className="absolute left-1/2 top-16 z-20 flex max-w-lg -translate-x-1/2 items-start gap-2 rounded-xl border border-warn/40 bg-surface px-4 py-3 text-sm shadow-pop">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
+            <span className="flex-1">{notice}</span>
+            <button aria-label="Dismiss" className="opacity-70 hover:opacity-100" onClick={dismissNotice}>
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
       </div>
     );
 
