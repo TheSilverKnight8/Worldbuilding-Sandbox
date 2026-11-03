@@ -107,8 +107,12 @@ function DialogBox({ d }: { d: Dialog }) {
     else d.resolve(ok && value.trim() ? value.trim() : null);
     close();
   };
+  // Select the starting text once, when the dialog opens. (Doing it on every render
+  // selected the text after each keystroke, so the next key replaced it.)
   useEffect(() => {
     input.current?.select();
+  }, []);
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') done(false);
     };
