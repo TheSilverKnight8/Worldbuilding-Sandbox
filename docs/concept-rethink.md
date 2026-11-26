@@ -30,6 +30,10 @@
 - Labels and icons can each be plain (just drawn) or a node (a map item linked to an entry).
 - A settlement's nation and culture fields are the truth; painted regions are drawings and may differ.
 - Painterly version: biome colors plus the same icons as the atlas, in color.
+- Elevation stays, and works both ways: shaping the elevation produces hills, mountains and other elevation-based geography, and placing those icons shapes the elevation. Random generation uses it too.
+- Why elevation matters here: worldbuilding, notably designing military campaigns (elevation often decides battles).
+- A terrain icon placed by hand stays exactly where it was put; the ground rises under it.
+- Seeing elevation: a readout under the map, plus an elevation overlay to toggle on (like the region overlays).
 - No importing of Nortantis maps. Every world starts in the app, generated or blank. (A `.nort` file stores seeds and edits, not shapes; reading it faithfully would have meant porting Nortantis's AGPL code.)
 - Entry types are built in (a fixed set): the old spec's, minus everything that existed for the simulation (see Entries).
 - Back from the old spec: images on entries, links between entries, search; timelines; diplomacy web; languages and names.
@@ -61,7 +65,7 @@ Structured fields listed; everything else is free write. Field rule now: a detai
 - Culture: weighted leanings; new cultures made by the sim.
 - Biome: resistance to change, major resources, hostility, economy and population worked out from them.
 - Faction: policy focuses, influence, the happiness/loyalty override rules.
-- Map items changing the terrain (features, settlements, roads).
+- Settlements and roads changing the terrain. (Terrain icons shaping elevation came back; see Confirmed.)
 - Hand-set overrides of calculated values, locking, autopause, tuning, sim events (rebellions, wars, disasters), sim timeline, real-time playback, the sim changing the diplomacy web.
 
 ### Not wanted (from the old spec, still applies)
@@ -88,11 +92,11 @@ Structured fields listed; everything else is free write. Field rule now: a detai
 - Not drop-in: Java on the desktop, so its methods would be rewritten (its main drawing files are about 2,400 lines each).
 
 ## Open questions
-- Elevation. On both map styles it only shows through mountain/hill icons and the coastline. Options:
-  - A (Claude recommends): elevation shapes the terrain. Paint elevation; the app puts mountain icons where it is high, hill icons a step below, and the coast at sea level (this is how Nortantis's generator places them). Single icons can still be placed by hand on top.
-  - B: no elevation. Place mountain/hill icons directly; the map only knows land and ocean.
-- If A, elevation's other uses:
-  - Random generation: rivers run downhill, mountains follow ridges.
+- Which "other elevation-based geography" besides hills and mountains?
+- Ground painted lower under a hand-placed mountain or hill: the icon goes, the icon stays, or the icon stops the ground from lowering?
+- Elevation overlay form: contour lines, shading, or a choice of both?
+- Elevation's other uses (proposed, not confirmed):
+  - Generation: rivers run downhill, mountains follow ridges.
   - Entries show a place's elevation, read from the map (not stored), so it can be filtered and compared (e.g. settlements above 2,000 m).
   - Ocean depth: ocean biomes by depth could follow it, or the painterly ocean could darken with depth.
 - Coordinate system (Caleb's idea, "might be helpful"); form open:
