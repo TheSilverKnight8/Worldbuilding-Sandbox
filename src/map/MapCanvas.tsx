@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { getMap, onMapChange } from '../lib/store';
-import { AtlasRenderer, type View } from '../lib/map/atlas';
+import type { SlotLook } from '../lib/map/biomes';
 import { buildCoast, type Coast } from '../lib/map/coast';
 import { cellAt, type Graph } from '../lib/map/graph';
+import { placeIcons, type Placement } from '../lib/map/icons';
 import { NoisyEdges } from '../lib/map/noisy';
-import type { Brush, LandPainter } from '../lib/map/paint';
+import type { Brush, MapPainter } from '../lib/map/paint';
+import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
 
 export type Tool = 'brush' | 'fill' | 'hand';
 
@@ -15,6 +17,8 @@ export interface Hover {
   y: number;
   cell: number;
   land: boolean;
+  /** Biome slot (0 = none). */
+  biomeSlot: number;
 }
 
 export interface MapCanvasHandle {
@@ -25,9 +29,11 @@ interface Props {
   handle: Ref<MapCanvasHandle>;
   graph: Graph;
   seed: number;
+  style: MapStyle;
+  looks: (SlotLook | null)[];
   brush: Brush;
   tool: Tool;
-  painter: LandPainter;
+  painter: MapPainter;
   onHover: (h: Hover | null) => void;
   onPick: (h: Hover) => void;
   onZoom: (scale: number) => void;
@@ -37,11 +43,11 @@ const MAX_SCALE = 60;
 /** After zooming or panning stops for this long, the map is drawn again at full quality. */
 const SETTLE_MS = 110;
 
-/** The map on screen, drawn in the fantasy-atlas look. */
-export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, onPick, onZoom }: Props) {
+/** The map on screen, in the atlas or painterly look. */
+export function MapCanvas({ handle, graph, seed, style, looks, brush, tool, painter, onHover, onPick, onZoom }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const renderer = useRef<AtlasRenderer | null>(null);
+  const renderer = useRef<MapRenderer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -52,12 +58,18 @@ export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, 
   const [space, setSpace] = useState(false);
   const drag = useRef<{ kind: 'pan' | 'paint'; x: number; y: number; vx: number; vy: number } | null>(null);
   const noisy = useMemo(() => new NoisyEdges(graph, seed), [graph, seed]);
-  const coast = useRef<Coast | null>(null);
-  const coastStale = useRef(true);
   const frame = useRef(0);
   const settle = useRef(0);
-  /** True during a brush stroke: the map is drawn quickly (no shading or waves) until the stroke ends. */
+  /** True during a brush stroke: the map is drawn quickly until the stroke ends. */
   const painting = useRef(false);
+
+  // What the drawing is built from, rebuilt only when its inputs change.
+  const coast = useRef<Coast | null>(null);
+  const coastStale = useRef(true);
+  const icons = useRef<Placement[]>([]);
+  const iconsStale = useRef(true);
+  const live = useRef({ style, looks });
+  live.current = { style, looks };
 
   const draw = useCallback(() => {
     const r = renderer.current;
@@ -67,10 +79,19 @@ export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, 
       coast.current = buildCoast(map.graph, map.land, noisy);
       coastStale.current = false;
     }
+    if (iconsStale.current) {
+      icons.current = placeIcons(map.graph, map.land, map.biome, live.current.looks, seed);
+      iconsStale.current = false;
+    }
     const v = viewRef.current;
-    r.draw(v, map.graph.width, map.graph.height, coast.current, painting.current);
+    r.draw(
+      v,
+      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: live.current.looks, icons: icons.current },
+      live.current.style,
+      painting.current,
+    );
     setDrawn(v);
-  }, [noisy]);
+  }, [noisy, seed]);
 
   /** Draws on the next animation frame (painting). */
   const drawSoon = useCallback(() => {
@@ -90,12 +111,13 @@ export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, 
 
   useEffect(() => {
     try {
-      renderer.current = new AtlasRenderer(canvas.current!);
+      renderer.current = new MapRenderer(canvas.current!);
     } catch (e) {
       setError((e as Error).message);
     }
     const off = onMapChange((change) => {
-      coastStale.current = true;
+      if (change !== 'biome') coastStale.current = true;
+      iconsStale.current = true;
       if (change === 'all') painter.clearHistory();
       drawSoon();
     });
@@ -108,12 +130,20 @@ export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, 
     };
   }, [painter, drawSoon]);
 
-  // A new graph or seed means new coastline wiggles.
+  // A new graph or seed means new coastline wiggles and icon spots.
   useEffect(() => {
     coastStale.current = true;
+    iconsStale.current = true;
     drawSoon();
   }, [noisy, drawSoon]);
 
+  // Biome colors or icon sets changed.
+  useEffect(() => {
+    iconsStale.current = true;
+    drawSoon();
+  }, [looks, drawSoon]);
+
+  useEffect(() => drawSoon(), [style, drawSoon]);
   useEffect(() => drawSettled(), [view, drawSettled]);
 
   const fit = useCallback(() => {
@@ -157,7 +187,7 @@ export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, 
 
   // Holding Space pans with the left button.
   useEffect(() => {
-    const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+    const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
     const down = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !typing(e)) {
         e.preventDefault();
@@ -186,7 +216,7 @@ export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, 
     if (!map) return null;
     const p = toMap(clientX, clientY);
     const cell = cellAt(map.graph, p.x, p.y);
-    return cell < 0 ? null : { ...p, cell, land: map.land[cell] === 1 };
+    return cell < 0 ? null : { ...p, cell, land: map.land[cell] === 1, biomeSlot: map.biome[cell] };
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -231,7 +261,7 @@ export function MapCanvas({ handle, graph, seed, brush, tool, painter, onHover, 
   const onPointerUp = () => {
     if (drag.current?.kind === 'paint') {
       painter.end();
-      // The stroke is done: draw the full atlas (shading and waves) again.
+      // The stroke is done: draw the full look (shading, waves, soft blending) again.
       painting.current = false;
       drawSettled();
     }

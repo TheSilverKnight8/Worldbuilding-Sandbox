@@ -83,6 +83,23 @@ export interface MapInfo {
   graphBlob: string;
   /** Blob ID of the land grid: one byte per cell, 1 = land, 0 = water. */
   landBlob: string;
+  /** Blob ID of the biome grid (Stage 3): one byte per cell, an index into biomeSlots (0 = no biome). */
+  biomeBlob: string;
+  /** Biome record IDs by grid index. Slot 0 is always null (no biome); a deleted biome leaves its slot null. */
+  biomeSlots: (string | null)[];
+  /** True once the starter biomes were added, so they are not added again after Caleb deletes them. */
+  biomesSeeded: boolean;
+}
+
+/** How a biome shows on the fantasy atlas (Stage 3): a set of icons drawn in code, or nothing. */
+export type IconSet = 'deciduous' | 'pine' | 'jungle' | 'cactus' | 'shrub' | 'grass' | 'dunes' | 'reeds' | 'none';
+
+/** A biome's structured fields. Biomes are for land only. */
+export interface BiomeFields {
+  /** Color on the painterly map, #rrggbb. */
+  color: string;
+  /** Icons on both maps (in ink on the atlas, in color on the painterly map). */
+  icons: IconSet;
 }
 
 /** One world: everything except its blobs. */

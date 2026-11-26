@@ -9,9 +9,10 @@ import { RECORD_KINDS, type FieldValue, type MapInfo, type RecordKind, type Worl
 //   1  Stage 1: worlds and records.
 //   2  Only on the abandoned `stage-2-map` branch: a square-grid map (no longer used).
 //   3  Stage 2: the polygon map (WorldDoc.map), with its polygons and land as blobs.
+//   4  Stage 3: biomes on the map (a biome grid blob and biome slots).
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
@@ -33,6 +34,12 @@ function upgrade(raw: Record<string, unknown>, from: number): Record<string, unk
       }
     o = { ...o, records, map: null };
   }
+  // 3 -> 4: a map gets an empty biome grid (no blob yet, read as all "no biome"), and the
+  // starter biomes are added the next time the world opens.
+  if (from < 4 && o.map) {
+    const m = rec(o.map);
+    o = { ...o, map: { ...m, biomeBlob: `${String(m.landBlob)}-biomes`, biomeSlots: [null], biomesSeeded: false } };
+  }
   return o;
 }
 
@@ -46,6 +53,8 @@ function readMap(v: unknown): MapInfo | null {
   const m = rec(v);
   if (!isPos(m.widthKm) || !isPos(m.heightKm) || !isPos(m.width) || !isPos(m.height) || !Number.isInteger(m.cellCount) || !isPos(m.cellCount)) return null;
   if (!isStr(m.graphBlob) || !isStr(m.landBlob) || !Number.isInteger(m.seed)) return null;
+  const slots = Array.isArray(m.biomeSlots) ? m.biomeSlots.slice(0, 256).map((s, i) => (i > 0 && isStr(s) ? s : null)) : [];
+  if (!slots.length) slots.push(null);
   return {
     widthKm: m.widthKm,
     heightKm: m.heightKm,
@@ -55,6 +64,9 @@ function readMap(v: unknown): MapInfo | null {
     seed: (m.seed as number) >>> 0,
     graphBlob: m.graphBlob,
     landBlob: m.landBlob,
+    biomeBlob: isStr(m.biomeBlob) ? m.biomeBlob : `${m.landBlob}-biomes`,
+    biomeSlots: slots,
+    biomesSeeded: m.biomesSeeded !== false,
   };
 }
 

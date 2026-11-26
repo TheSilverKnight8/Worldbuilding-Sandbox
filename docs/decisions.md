@@ -9,7 +9,8 @@ The spec leaves most of the implementation to Claude Code ("Most implementation 
 The build order is in `SPEC.md` ("Build order"), agreed with Caleb: 11 stages, macro to micro, with a test checkpoint after each.
 
 1. Foundation **(done)**, then the cleanup of simulation leftovers **(done)**.
-2. Polygon map and the atlas look **(this stage)**.
+2. Polygon map and the atlas look **(done)**.
+3. Biomes and the painterly look **(this stage)**.
 
 The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not merged; the polygon map replaces it. The branch is kept for reference.
 
@@ -22,6 +23,10 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Data structure | The shape under "Data structure" below. |
 | Importing a world when all 3 slots are full | Refuse, and ask to delete a world first. |
 | Everything about the version 2 direction | See `docs/concept-rethink.md`. |
+| Atlas sea (Stage 2 checkpoint) | A lighter or darker brown, not blue. (Darker brown chosen.) |
+| Painterly sea (Stage 3) | Blue. |
+| Starter biomes (Stage 3) | Fewer, simpler: a short list of broad biomes. |
+| Edges between biomes on the painterly map (Stage 3) | Soft, blended. |
 
 ## Platform
 
@@ -112,6 +117,56 @@ The spec left two things to this stage: the drawing technology and the number of
 
 - Format version **3** adds the map. Stage 1 worlds (version 1) open to map setup. Worlds from the abandoned square-grid branch (version 2) drop that grid map and its ocean biomes, keep any land biomes, and open to map setup.
 - If a map's stored land cannot be read, it is reset to water with a notice; if its polygons cannot be read, the world opens to map setup with a notice. Neither crashes.
+
+## Biomes and the painterly look (Stage 3)
+
+### Biomes
+
+| Item | Choice |
+| --- | --- |
+| Fields | Name; **color** on the painterly map (Caleb's choice per biome); **icons** on the map. Land only. |
+| Starter list | Forest (leafy trees), Pine forest (pine trees), Jungle (jungle trees), Grassland (grass tufts), Desert (dunes), Swamp (reeds), Tundra (no icons), Ice (no icons). Added once per map, and only if the world has no biomes yet, so deleting them all does not bring them back. All can be renamed, recolored, given other icons or deleted. |
+| Icon sets | Leafy trees, pine trees, jungle trees, cacti, shrubs, grass tufts, dunes, reeds, or no icons. |
+| Limit | 255 biomes per world (the grid stores one byte per cell). |
+| Deleting | Asks first; land painted with it goes back to no biome. It also clears the undo history, which could otherwise paint the deleted biome back. |
+| Old maps | A Stage 2 map (format 3) opens with the starter biomes and an empty biome grid. Format 4 adds the biome grid and the biome slots (which biome each grid number means). |
+
+### Painting
+
+| Item | Choice |
+| --- | --- |
+| Modes | **Land & water** or **Biomes**. Picking a biome in the panel switches to Biomes. **X** switches back to land and water and swaps them. |
+| Biome brush | Paints only land cells; water cells under the brush are left alone. **No biome (erase)** clears biomes. |
+| Biome fill | Fills the connected land cells (sharing an edge) that have the same biome as the one clicked. On water it does nothing. |
+| Water over biomes | A cell turned to water loses its biome (biomes are for land). Undo brings back both. |
+| Alt+click | In Biomes mode, picks the biome under the cursor. |
+
+### Icons (drawn in code)
+
+| Item | Choice | Why |
+| --- | --- | --- |
+| Drawing | Each icon is drawn in code once at the size it shows on screen, then stamped wherever it goes. Ink on paper for the atlas; colored for the painterly map. | Spec: art drawn in code, as a swappable set. Thousands of trees stay fast. |
+| Placement | A few per land cell, jittered around the cell's center, the same every time (seeded by the map and the cell): 2 per cell for trees, fewer for cacti and dunes. Cells on the coast get one smaller icon at their center (dunes none), so icons stay off the water. Drawn top to bottom, so nearer icons overlap farther ones. | Like Nortantis's forests. |
+| Size | About one cell tall for trees, half for grass, one and a half cells wide for dunes. | |
+| Too small to read | Icons smaller than a few screen pixels are not drawn: trees below 5 px, dunes below 8, grass and reeds below 10. So grassland and swamps show their icons only once zoomed in. | Tiny grass turned into dark specks across the whole land. |
+
+### The painterly look
+
+| Item | Choice |
+| --- | --- |
+| Sea | Blue (Caleb), lighter along the coast (a soft band about 14 units wide). |
+| Land | Each cell in its biome's color, blended softly into its neighbors (a blur of about 2.4 map units); land with no biome is a pale ochre. Water cells next to land take that land's color in the hidden color picture, so the blending never pulls a pale fringe into the coast. |
+| Paper | The parchment texture shows through the paint (multiplied at 45%), so it reads as paint on paper. |
+| Coastline | A thin dark blue-grey line. No wave rings (those are the atlas's). |
+| Icons | The same icons as the atlas, in color. |
+| Speed | The biome colors are kept in a picture that is repainted only where land or biomes change, so painting stays quick. In the test browser (no graphics card) a full painterly drawing took about 50 ms and an atlas drawing about 120 ms. |
+
+### The look toggle
+
+| Item | Choice |
+| --- | --- |
+| Where | **Atlas / Painterly** in the toolbar. |
+| Remembered | Per world, on this computer (not part of the world, so not in exports). Entry pages will follow it (Stage 7). |
 
 ## Data structure (agreed with Caleb)
 

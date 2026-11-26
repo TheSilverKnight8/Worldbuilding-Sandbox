@@ -12,20 +12,22 @@ It is an installable web app (PWA) for Chrome on a computer (Mac or Windows), ho
 | Worlds | Up to 3 worlds. Create one (it asks for a name), open it, delete it (asks to confirm). Creating or importing a fourth is refused with a message to delete one first. |
 | Saving | Changes save by themselves half a second after the last edit, in the browser's storage (IndexedDB). The header shows Saving / Saved. The app asks Chrome to keep its storage even when the disk runs low; Home says whether Chrome agreed. |
 | Export and import | Export saves a world as one file (`<name>.world.json`), images and map included. Import adds a world from such a file. Files carry a format version, so files exported today still open after the app changes. |
-| Map | Set the map's size in kilometers. It is made of 16,000 irregular polygons and starts as open water. Draw land and water with a brush or fill; undo and redo. The app draws it as a fantasy atlas: parchment, inked coastlines, shaded water, waves off the coast. A readout gives positions in km. |
+| Map | Set the map's size in kilometers. It is made of 16,000 irregular polygons and starts as open water. Draw land and water with a brush or fill; undo and redo. A readout gives positions in km. |
+| Two looks | **Atlas**: a fantasy atlas in ink on parchment, brown sea with waves off the coast; biomes show only through icons. **Painterly**: a colorful painted map, blue sea, biome colors blended softly, the same icons in color. Toggle in the toolbar; remembered per world on this computer. |
+| Biomes | Starts with a short list of broad biomes (forest, pine forest, jungle, grassland, desert, swamp, tundra, ice). Each has a color and a set of icons (trees, pines, palms, cacti, shrubs, grass, dunes, reeds, or none) drawn in code. Paint them on land with a brush or fill; add, rename, recolor, change icons, delete. |
 
-Coming next (Stage 3): biomes and the painterly look.
+Coming next (Stage 4): elevation and terrain icons.
 
 ### Map controls
 
 | Do | How |
 | --- | --- |
 | Brush, fill, move the map | `B`, `F`, `H` (or hold `Space` and drag, or drag with the middle button) |
-| Swap land and water | `X` |
+| Swap land and water (and go back to painting land) | `X` |
 | Brush size | `[` and `]`, or the slider |
 | Zoom | Mouse wheel (or trackpad pinch) |
 | Undo, redo | `Ctrl+Z`, `Ctrl+Shift+Z` (or `Ctrl+Y`) |
-| Pick land or water from the map | `Alt`+click |
+| Pick land, water or a biome from the map | `Alt`+click |
 
 ## Run it on your computer
 
@@ -57,9 +59,9 @@ Clearing Chrome's site data for the address deletes the worlds stored there. An 
 ```
 src/
   lib/world/     world shape (records, fields, blobs, map), format version, export and import files
-  lib/map/       polygons, noisy edges, coastlines, the atlas drawing, land and water tools
+  lib/map/       polygons, noisy edges, coastlines, biomes, icons, both looks, the painting tools
   lib/           browser storage (IndexedDB), app state and autosave
-  map/           map setup, map editor, map canvas
+  map/           map setup, map editor, map canvas, biome panel
   pages/         Home (the world list), World
   components/    app frame, dialogs, shared pieces
   graphics/      app icon, Croswell Industries logo

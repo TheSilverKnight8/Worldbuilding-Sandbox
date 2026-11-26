@@ -23,7 +23,7 @@ export function WorldPage() {
     const data = getMap();
     return (
       <div className="relative h-full">
-        {map && data ? <MapEditor map={map} graph={data.graph} /> : <MapSetup />}
+        {map && data ? <MapEditor world={open.world} map={map} graph={data.graph} /> : <MapSetup />}
         {notice && (
           <div role="status" className="absolute left-1/2 top-16 z-20 flex max-w-lg -translate-x-1/2 items-start gap-2 rounded-xl border border-warn/40 bg-surface px-4 py-3 text-sm shadow-pop">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />

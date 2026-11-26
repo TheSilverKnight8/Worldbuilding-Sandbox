@@ -2,10 +2,11 @@ import { useSyncExternalStore } from 'react';
 import { MAX_WORLDS } from '../config';
 import { addWorld, deleteWorldData, getBlob, listBlobs, listWorlds, putBlob, readDoc, saveWorld, storageMessage, writeWorld } from './db';
 import { newId } from './ids';
+import { MAX_BIOMES, biomeRecord, seedBiomes, slotFor } from './map/biomes';
 import { DEFAULT_CELLS, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
-import { metaOf, type MapInfo, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
+import { metaOf, type BiomeFields, type IconSet, type MapInfo, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
 
 export interface SaveStatus {
   state: 'saved' | 'saving' | 'error';
@@ -199,6 +200,7 @@ export async function openWorld(id: string) {
     }
     let world = parsed.data;
     let lostMap = false;
+    let seeded = false;
     if (world.map) {
       const loaded = await loadMap(id, world.map);
       if (stale()) return;
@@ -208,15 +210,21 @@ export async function openWorld(id: string) {
         world = { ...world, map: null };
         lostMap = true;
       }
-      if (loaded?.landReset) {
-        landDirty = true;
+      if (loaded?.reset) {
+        layersDirty = true;
         lostMap = true;
       }
+    }
+    // A map from before Stage 3 gets the starter biomes, once.
+    if (world.map && !world.map.biomesSeeded) {
+      const s = seedBiomes(world, world.map);
+      world = { ...s.doc, map: s.map };
+      seeded = true;
     }
     set({ open: { kind: 'ready', world }, save: { state: 'saved' } });
     emitMap('all');
     // A world saved by an older version of the app is saved again in the current format.
-    if (stored.version < FORMAT_VERSION || lostMap) markDirty();
+    if (stored.version < FORMAT_VERSION || lostMap || seeded) markDirty();
     if (lostMap) set({ notice: 'Part of this map’s stored data could not be read and was reset.' });
   } catch (e) {
     if (stale()) return;
@@ -230,7 +238,7 @@ export async function closeWorld() {
   await flushSaves();
   unlock();
   mapData = null;
-  landDirty = false;
+  layersDirty = false;
   if (state.open.kind !== 'none') set({ open: { kind: 'none' }, notice: null });
 }
 
@@ -266,19 +274,23 @@ export function flushSaves(): Promise<void> {
   const o = state.open;
   if (!dirty || o.kind !== 'ready') return Promise.resolve();
   const doc = o.world;
-  // The map's land saves with the doc, in the same transaction, when it changed.
+  // The map's land and biomes save with the doc, in the same transaction, when they changed.
   const blobs: WorldBlob[] = [];
-  const withLand = landDirty && mapData !== null && doc.map !== null;
-  if (withLand && mapData && doc.map) blobs.push({ worldId: doc.id, id: doc.map.landBlob, type: 'application/octet-stream', data: landToBlob(mapData.land) });
+  const withLayers = layersDirty && mapData !== null && doc.map !== null;
+  if (withLayers && mapData && doc.map) {
+    const type = 'application/octet-stream';
+    blobs.push({ worldId: doc.id, id: doc.map.landBlob, type, data: landToBlob(mapData.land) });
+    blobs.push({ worldId: doc.id, id: doc.map.biomeBlob, type, data: landToBlob(mapData.biome) });
+  }
   dirty = false;
-  landDirty = false;
+  layersDirty = false;
   flushing = (async () => {
     try {
       await saveWorld(metaOf(doc), { id: doc.id, version: FORMAT_VERSION, doc }, blobs);
       set({ save: { state: dirty ? 'saving' : 'saved' } });
     } catch (e) {
       dirty = true;
-      if (withLand) landDirty = true;
+      if (withLayers) layersDirty = true;
       set({ save: { state: 'error', message: storageMessage(e) } });
     } finally {
       flushing = null;
@@ -333,22 +345,24 @@ export async function importWorld(file: File): Promise<Result<WorldMeta>> {
   return { ok: true, value: meta };
 }
 
-// ---------------------------------------------------------------- the map (Stage 2)
+// ---------------------------------------------------------------- the map (Stages 2 and 3)
 
-// The open world's polygons and land live here, outside React state: painting changes
-// the land many times a second. The renderer listens for changes.
+// The open world's polygons, land and biomes live here, outside React state: painting
+// changes them many times a second. The renderer listens for changes.
 export interface MapData {
   graph: Graph;
   /** One byte per cell: 1 = land, 0 = water. Changed in place by the painting tools. */
   land: Uint8Array;
+  /** One byte per cell: an index into MapInfo.biomeSlots (0 = no biome). Only land cells have biomes. */
+  biome: Uint8Array;
 }
 
 let mapData: MapData | null = null;
-/** The land changed since the last save. */
-let landDirty = false;
+/** The land or biomes changed since the last save. */
+let layersDirty = false;
 
-/** 'land': cells changed land or water. 'all': a different map (opened, set up, closed). */
-export type MapChange = 'land' | 'all';
+/** 'land': cells changed land or water. 'biome': cells changed biome. 'all': a different map (opened, set up, closed) or a biome deleted. */
+export type MapChange = 'land' | 'biome' | 'all';
 type MapListener = (change: MapChange) => void;
 const mapListeners = new Set<MapListener>();
 
@@ -369,18 +383,20 @@ export function emitMap(change: MapChange) {
   for (const fn of mapListeners) fn(change);
 }
 
-/** A painting step (stroke, fill, undo) is finished: save the land. */
+/** A painting step (stroke, fill, undo) is finished: save the land and biomes. */
 export function mapEdited() {
-  landDirty = true;
+  layersDirty = true;
   updateWorld((d) => ({ ...d }));
 }
 
-async function loadMap(worldId: string, m: MapInfo): Promise<{ data: MapData; landReset: boolean } | null> {
-  const [g, l] = await Promise.all([getBlob(worldId, m.graphBlob), getBlob(worldId, m.landBlob)]);
+async function loadMap(worldId: string, m: MapInfo): Promise<{ data: MapData; reset: boolean } | null> {
+  const [g, l, b] = await Promise.all([getBlob(worldId, m.graphBlob), getBlob(worldId, m.landBlob), getBlob(worldId, m.biomeBlob)]);
   const graph = g ? await graphFromBlob(g.data) : null;
   if (!graph || graph.cellCount !== m.cellCount) return null;
   const land = await landFromBlob(l?.data, graph.cellCount);
-  return { data: { graph, land: land ?? new Uint8Array(graph.cellCount) }, landReset: !land };
+  // A map from before Stage 3 has no biome grid yet: that is expected, not damage.
+  const biome = b ? await landFromBlob(b.data, graph.cellCount) : new Uint8Array(graph.cellCount);
+  return { data: { graph, land: land ?? new Uint8Array(graph.cellCount), biome: biome ?? new Uint8Array(graph.cellCount) }, reset: !land || !biome };
 }
 
 /** Limits for a map's size, in kilometers. */
@@ -397,7 +413,7 @@ export function checkMapSize(widthKm: number, heightKm: number): string | null {
   return null;
 }
 
-/** Sets up the open world's map: a new polygon graph of the given size in km, all water. */
+/** Sets up the open world's map: a new polygon graph of the given size in km, all water, with the starter biomes. */
 export async function setupMap(widthKm: number, heightKm: number): Promise<Result> {
   const doc = state.open.kind === 'ready' ? state.open.world : null;
   if (!doc || doc.map) return { ok: false, reason: 'This world already has a map.' };
@@ -409,17 +425,85 @@ export async function setupMap(widthKm: number, heightKm: number): Promise<Resul
   const units = mapUnitsFor(widthKm, heightKm);
   const seed = newSeed();
   const graph = generateGraph(units.width, units.height, DEFAULT_CELLS, seed);
-  const map: MapInfo = { widthKm, heightKm, width: units.width, height: units.height, cellCount: graph.cellCount, seed, graphBlob: newId(), landBlob: newId() };
+  const landBlob = newId();
+  const map: MapInfo = {
+    widthKm,
+    heightKm,
+    width: units.width,
+    height: units.height,
+    cellCount: graph.cellCount,
+    seed,
+    graphBlob: newId(),
+    landBlob,
+    biomeBlob: `${landBlob}-biomes`,
+    biomeSlots: [null],
+    biomesSeeded: false,
+  };
   try {
-    // The polygons are written once, now; the land saves with the world from here on.
+    // The polygons are written once, now; land and biomes save with the world from here on.
     await putBlob({ worldId, id: map.graphBlob, type: 'application/octet-stream', data: graphToBlob(graph) });
   } catch (e) {
     return { ok: false, reason: storageMessage(e) };
   }
   if (state.open.kind !== 'ready' || state.open.world.id !== worldId) return { ok: false, reason: 'The world was closed.' };
-  mapData = { graph, land: new Uint8Array(graph.cellCount) };
-  landDirty = true;
-  updateWorld((d) => ({ ...d, map }));
+  mapData = { graph, land: new Uint8Array(graph.cellCount), biome: new Uint8Array(graph.cellCount) };
+  layersDirty = true;
+  updateWorld((d) => {
+    const s = seedBiomes(d, map);
+    return { ...s.doc, map: s.map };
+  });
   emitMap('all');
   return { ok: true, value: undefined };
+}
+
+// ---------------------------------------------------------------- biomes (Stage 3)
+
+const openDoc = () => (state.open.kind === 'ready' ? state.open.world : null);
+
+export function addBiome(name: string, color: string, icons: IconSet): Result<string> {
+  const doc = openDoc();
+  if (!doc) return { ok: false, reason: 'No world is open.' };
+  if (Object.values(doc.records).filter((r) => r.kind === 'biome').length >= MAX_BIOMES) return { ok: false, reason: `A world can hold up to ${MAX_BIOMES} biomes.` };
+  const r = biomeRecord(name.trim() || 'New biome', color, icons);
+  let map = doc.map;
+  if (map) {
+    const s = slotFor(map, r.id);
+    if (!s) return { ok: false, reason: `A world can hold up to ${MAX_BIOMES} biomes.` };
+    map = s.map;
+  }
+  updateWorld((d) => ({ ...d, records: { ...d.records, [r.id]: r }, map }));
+  return { ok: true, value: r.id };
+}
+
+export function updateBiome(id: string, patch: { name?: string } & Partial<BiomeFields>) {
+  const r = openDoc()?.records[id];
+  if (!r || r.kind !== 'biome') return;
+  const fields = { ...r.fields, ...(patch.color ? { color: patch.color } : {}), ...(patch.icons ? { icons: patch.icons } : {}) };
+  const name = patch.name !== undefined ? patch.name.trim() || r.name : r.name;
+  updateWorld((d) => ({ ...d, records: { ...d.records, [id]: { ...r, name, fields } } }));
+}
+
+/** Deletes a biome. Cells painted with it go back to no biome. */
+export function deleteBiome(id: string) {
+  const doc = openDoc();
+  if (!doc?.records[id]) return;
+  let map = doc.map;
+  if (map && mapData) {
+    const slot = map.biomeSlots.indexOf(id);
+    if (slot > 0) {
+      const b = mapData.biome;
+      for (let i = 0; i < b.length; i++) if (b[i] === slot) b[i] = 0;
+      const slots = [...map.biomeSlots];
+      slots[slot] = null;
+      map = { ...map, biomeSlots: slots };
+      layersDirty = true;
+    }
+  }
+  updateWorld((d) => {
+    const records = { ...d.records };
+    delete records[id];
+    return { ...d, records, map };
+  });
+  // 'all' also clears the undo history, which could otherwise paint the deleted biome's slot back.
+  emitMap('all');
 }
