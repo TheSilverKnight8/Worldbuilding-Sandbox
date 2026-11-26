@@ -33,7 +33,10 @@
 - Elevation stays, and works both ways: shaping the elevation produces hills, mountains and other elevation-based geography, and placing those icons shapes the elevation. Random generation uses it too.
 - Why elevation matters here: worldbuilding, notably designing military campaigns (elevation often decides battles).
 - A terrain icon placed by hand stays exactly where it was put; the ground rises under it.
+- Icons come before elevation: where a hand-placed icon and the elevation disagree, the icon wins (Caleb's designs may contradict the algorithm on purpose). A hand-placed mountain stays when the ground around it is painted lower.
 - Seeing elevation: a readout under the map, plus an elevation overlay to toggle on (like the region overlays).
+- Distances and coordinates in kilometers. No grid overlay.
+- Map size is measured in kilometers, not tiles (the polygons are not uniform).
 - No importing of Nortantis maps. Every world starts in the app, generated or blank. (A `.nort` file stores seeds and edits, not shapes; reading it faithfully would have meant porting Nortantis's AGPL code.)
 - Entry types are built in (a fixed set): the old spec's, minus everything that existed for the simulation (see Entries).
 - Back from the old spec: images on entries, links between entries, search; timelines; diplomacy web; languages and names.
@@ -92,9 +95,23 @@ Structured fields listed; everything else is free write. Field rule now: a detai
 - Not drop-in: Java on the desktop, so its methods would be rewritten (its main drawing files are about 2,400 lines each).
 
 ## Open questions
-- Which "other elevation-based geography" besides hills and mountains?
-- Ground painted lower under a hand-placed mountain or hill: the icon goes, the icon stays, or the icon stops the ground from lowering?
-- Elevation overlay form: contour lines, shading, or a choice of both?
+- Elevation-based geography: review Claude's proposal (section below).
+- Under a hand-placed mountain, the elevation reads at least the mountain's height, whatever is painted around it (Claude's reading of "icons come before elevation"): confirm.
+- Map size: set as width × height in km (a rectangle needs both), with the area shown in km²: confirm.
+- Elevation overlay form: contour lines, shading, or a choice of both? (Claude picks if Caleb has no preference.)
+
+## Elevation-based geography (Claude's proposal, for Caleb to review)
+How each kind relates to elevation:
+- Raise the ground (point icons): hills, mountains, volcanoes, mesas/buttes.
+- Raise a flat area: plateaus.
+- Lower the ground: valleys, canyons/gorges, basins.
+- Sudden step (line feature): cliffs/escarpments, including sea cliffs.
+- Follow the elevation (do not shape it): rivers run downhill; lakes sit in low spots; waterfalls where a river drops; mountain passes at low points between peaks; snowcaps above a height.
+- Under water, only if ocean depth matters: trenches, undersea ridges.
+
+For campaign design these decide battles: high ground (hills, mountains, plateaus), chokepoints (passes, valleys, canyons), impassable edges (cliffs), river crossings.
+
+Proposed starter set: hills, mountains, volcanoes, plateaus, valleys, canyons, cliffs, passes; with rivers, lakes and waterfalls following the elevation.
 - Elevation's other uses (proposed, not confirmed):
   - Generation: rivers run downhill, mountains follow ridges.
   - Entries show a place's elevation, read from the map (not stored), so it can be filtered and compared (e.g. settlements above 2,000 m).
