@@ -36,7 +36,12 @@
 - Icons come before elevation: where a hand-placed icon and the elevation disagree, the icon wins (Caleb's designs may contradict the algorithm on purpose). A hand-placed mountain stays when the ground around it is painted lower.
 - Seeing elevation: a readout under the map, plus an elevation overlay to toggle on (like the region overlays).
 - Distances and coordinates in kilometers. No grid overlay.
-- Map size is measured in kilometers, not tiles (the polygons are not uniform).
+- Map size is measured in kilometers, not tiles (the polygons are not uniform): set as width × height in km, with the area shown in km².
+- Under a hand-placed mountain or hill, the elevation reads at least that icon's height, whatever is painted around it.
+- Elevation-based geography, starter set: hills, mountains, volcanoes, plateaus, valleys, canyons, cliffs, passes. Rivers, lakes and waterfalls follow the elevation.
+- Generation uses elevation: rivers run downhill, mountains follow ridges.
+- Place entries (settlements, landmarks, features) show the elevation at their spot, read from the map, and can be filtered and compared by it.
+- No ocean biomes and no ocean depth: the ocean is just water. Biomes and elevation are for land; the focus is land detail.
 - No importing of Nortantis maps. Every world starts in the app, generated or blank. (A `.nort` file stores seeds and edits, not shapes; reading it faithfully would have meant porting Nortantis's AGPL code.)
 - Entry types are built in (a fixed set): the old spec's, minus everything that existed for the simulation (see Entries).
 - Back from the old spec: images on entries, links between entries, search; timelines; diplomacy web; languages and names.
@@ -46,11 +51,11 @@
 
 ## Entries (old spec minus the simulation)
 Structured fields listed; everything else is free write. Field rule now: a detail gets a field only if Caleb would filter or compare by it.
-- **Settlement**: name; nation (or independent); dominant culture; demographic breakdown by culture; population; technology level; founded date. Terrain and biome shown from the map.
+- **Settlement**: name; nation (or independent); dominant culture; demographic breakdown by culture; population; technology level; founded date. Biome and elevation shown from the map.
 - **Nation**: name; dominant culture; government type; capital; founded date. Shown, not stored: its settlements, territory, total population, relations.
 - **Culture**: name; its one language.
 - **Language**: common and avoided letters or sounds, syllable patterns, stress, example names, free write. Name checking and generation. Assigned to cultures. "Names" means personal names; landmarks not covered.
-- **Biome**: name; painterly color; atlas icon set (e.g. trees, dunes, none). The icon set is new: the atlas needs it.
+- **Biome** (land only): name; painterly color; atlas icon set (e.g. trees, dunes, none). The icon set is new: the atlas needs it.
 - **Faction / people group**: name; type; size (membership, nations present in).
 - **Geographical feature**: name; kind; size where it applies; location.
 - **Landmark**: name; kind; location.
@@ -95,31 +100,17 @@ Structured fields listed; everything else is free write. Field rule now: a detai
 - Not drop-in: Java on the desktop, so its methods would be rewritten (its main drawing files are about 2,400 lines each).
 
 ## Open questions
-- Elevation-based geography: review Claude's proposal (section below).
-- Under a hand-placed mountain, the elevation reads at least the mountain's height, whatever is painted around it (Claude's reading of "icons come before elevation"): confirm.
-- Map size: set as width × height in km (a rectangle needs both), with the area shown in km²: confirm.
 - Elevation overlay form: contour lines, shading, or a choice of both? (Claude picks if Caleb has no preference.)
 
-## Elevation-based geography (Claude's proposal, for Caleb to review)
+## Elevation-based geography (reference)
 How each kind relates to elevation:
 - Raise the ground (point icons): hills, mountains, volcanoes, mesas/buttes.
 - Raise a flat area: plateaus.
 - Lower the ground: valleys, canyons/gorges, basins.
 - Sudden step (line feature): cliffs/escarpments, including sea cliffs.
 - Follow the elevation (do not shape it): rivers run downhill; lakes sit in low spots; waterfalls where a river drops; mountain passes at low points between peaks; snowcaps above a height.
-- Under water, only if ocean depth matters: trenches, undersea ridges.
 
 For campaign design these decide battles: high ground (hills, mountains, plateaus), chokepoints (passes, valleys, canyons), impassable edges (cliffs), river crossings.
-
-Proposed starter set: hills, mountains, volcanoes, plateaus, valleys, canyons, cliffs, passes; with rivers, lakes and waterfalls following the elevation.
-- Elevation's other uses (proposed, not confirmed):
-  - Generation: rivers run downhill, mountains follow ridges.
-  - Entries show a place's elevation, read from the map (not stored), so it can be filtered and compared (e.g. settlements above 2,000 m).
-  - Ocean depth: ocean biomes by depth could follow it, or the painterly ocean could darken with depth.
-- Coordinate system (Caleb's idea, "might be helpful"); form open:
-  - Readout: cursor position (and elevation, if A) under the map.
-  - Units: grid cells; km, with a map scale set per world; or latitude/longitude.
-  - On the map: an optional grid overlay (squares or hexes; Nortantis offers both) with labelled rows and columns, atlas style.
 
 ## Already built (on hold, untouched until this doc settles)
 - `main`: Stage 1 (worlds, autosave, export/import), live
