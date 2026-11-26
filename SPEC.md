@@ -1,152 +1,155 @@
-# Worldbuilding Sandbox — Design Doc
+# Worldbuilding Sandbox — Design Doc (v2)
 
-Personal worldbuilding app, vibecoded with the same workflow as the other vibecoded apps (plan → prototype → escalate, consulting at each step). Most implementation is left to code's judgement. This doc covers what the app is and does, followed by the basic build decisions.
+Personal worldbuilding app, vibecoded with the same workflow as the other vibecoded apps (plan → prototype → escalate, consulting at each step). Rewritten in November 2026: the simulation is gone, and the app is now a creative, high-quality worldbuilder instead of a realistic one. The reasoning behind this version is in `docs/concept-rethink.md`; the first version is in this file's git history.
 
 ## Why
 
-- Existing tools don't fit:
-  - **World Anvil** and other full-featured tools: paid, and not willing to pay.
-  - **Azgaar**: too hard to use. Its light sim never informed worldbuilding decisions and could be ignored entirely.
-  - **Nortantis**: only a map maker; not good at simulating or building anything other than a map.
-  - Other systems felt like they "didn't matter to anything."
-- Goal: something like the paid versions of World Anvil, in my own way with my own features. Also a way to see how much can be put in and how much is actually useful.
+- World Anvil and other full-featured tools: paid, and not willing to pay.
+- Azgaar: too hard to use.
+- Nortantis: only a map maker. This app takes its look and adds my other features.
+- Goal: something like the paid versions of World Anvil, in my own way with my own features.
+
+## Direction
+
+- Creative over realistic. No simulation of any kind.
+- Quality over breadth. "High quality" means how it looks, first.
+- Private: only I see it. No sharing or presenting features.
+- The map and the entries are equal ways into a world.
 
 ## General rules
 
-- Private, or at least locally saved.
+- Installable web app on GitHub Pages. Runs in Chrome on Mac and Windows, in its own window.
+- Saved locally in the browser: autosave, plus manual export and import of a world as a file. No backup reminders.
 - Up to 3 worlds; worlds can be deleted.
-- Entries have structured fields plus a free-write section. Fields are kept clean: a detail gets a structured field only if the sim reads or changes it, or I would filter or compare by it. Everything else is free write.
-- Images can be attached to entries.
-- Search across entries.
-- Entries can link to each other (nice-to-have).
-- Not every node needs a written entry (saves space).
-- No bloat: nothing that doesn't help inform my decisions.
-- Parametric with manual entry everywhere: anything the sim or the app calculates (happiness, loyalty, faction membership and influence, etc.) can also be set by hand.
+- The app's frame and menus use the cream, navy and red style of my other apps. The map and the entry pages follow the map style toggle.
+- Entries have structured fields plus a free-write section. A detail gets a structured field only if I would filter or compare by it. Everything else is free write.
+- Images can be attached to entries. Entries can link to each other. Search across entries.
+- Not every map item needs a written entry.
+- A name changes only when I edit it.
+- No bloat.
 
 ## Map
 
-- **Hybrid:** my image (made in Nortantis) is the visual backdrop. The app keeps its own data layer (height, biome) on top.
-- **Data layer starts by painting:** land and ocean borders first, then geographical features. Biomes are painted by hand, or seeded and spread organically by the sim. The initial biome spread is instant. Biomes keep shifting during the sim.
-- **Terrain model:** painted terrain is the base layer, and node effects sit on top. Terrain changes as nodes are added, changed, moved, or removed.
-- **Overlays:** political, cultural, and faction regions can be viewed on top of biomes to see territory. Factions have their own overlay. Borders are derived from settlement territory and constrained by geographical features. Optional painting on top.
+- Drawn by the app. No imported images, and no importing of Nortantis maps.
+- A world starts as a randomly generated map or a blank one; either way it can be edited.
+- Map size is set as width × height in kilometers; the area is shown in km². Distances and coordinates are in kilometers, with a readout under the map. No grid overlay.
+- Built from irregular polygons, like Nortantis, not a square grid.
 
-### Map items
+### Styles (a toggle between two looks of the same world)
 
-- **Settlement:** see below. Settlements and other manmade areas affect terrain to a lesser extent.
-- **Geographical feature:** natural (mountains, rivers, lakes, caverns, etc.). Each kind has a built-in terrain effect. Size-dependent kinds (e.g. mountains) have a size slider that scales the edit. Biomes differ in how much they resist change.
-- **Landmark:** major buildings, ruins, statues, and other non-geographical things that shouldn't be abstracted. Landmarks do not edit terrain.
-- **Road:** affects terrain lightly. Matters to the sim by connecting settlements.
-- **Info node:** general information not attached to a specific object, e.g. marking non-physical events. Mostly free write. Independent of the timelines.
-- **Groups:** features like mountains and roads can be grouped (e.g. a mountain range). A group has its own name and entry. Members keep their own entries. Mainly to save space.
+- **Fantasy atlas**, in the style of Nortantis: parchment, inked coastlines, icons. Biomes show only through icons (trees, dunes).
+- **Painterly**: colorful and classical. Biome colors, plus the same icons in color.
+- The app's own code and art (art drawn in code), using the same general techniques as Nortantis. No Nortantis code or art, so no AGPL requirement.
+
+### Land, water and elevation
+
+- The ocean is just water: no ocean biomes, no depth. The focus is land detail.
+- Land has elevation. It matters for worldbuilding, especially for designing military campaigns, because elevation often decides battles.
+- Elevation works both ways: shaping the elevation produces terrain icons, and placing terrain icons shapes the elevation.
+- Icons come before elevation. A terrain icon placed by hand stays exactly where I put it, and the elevation under it reads at least that icon's height, whatever is painted around it.
+- Terrain icons, starter set: hills, mountains, volcanoes, plateaus, valleys, canyons, cliffs, passes.
+- Rivers, lakes and waterfalls follow the elevation. Random generation uses it too: rivers run downhill, mountains follow ridges.
+- Seeing elevation: the readout under the map, plus an elevation overlay to toggle on.
+
+### Biomes
+
+- Land only. Fields: name; painterly color (chosen by me); atlas icon set (e.g. trees, dunes, none).
+- Starts with a list of basic land biomes.
+
+### Other map features
+
+- Rivers and lakes; roads; borders and regions; labels; decorations (compass rose, scale bar, ships and such).
+- Labels and icons can each be plain (just drawn) or a node (a map item linked to an entry).
+- Borders and regions are drawn by hand only. Region overlays, each on its own: nations, cultures, factions.
+- A settlement's nation and culture fields are the truth; painted regions are drawings and may differ.
 
 ## Entry types and fields
 
-**Settlement**
-- Name; nation (or independent); dominant culture (the only culture shown in the main dropdown)
-- Demographic breakdown by culture (pie-chart style)
-- Population, split into workers and soldiers
-- Economy: major exports and imports, average wealth, maximum wealth
-- Technology: a level or advancement tier
-- Happiness and loyalty toward its nation. Sim-calculated and manually settable. These disappear on independent settlements. They allow rebellions.
-- Terrain and biome info is read from the map, not stored.
+Built in (a fixed set): the first version's types and fields, minus everything that existed for the simulation.
 
-**Nation**
-- Name; dominant culture; government type (affects how policy works)
-- Policy: several weighted focuses, which also shape how the sim plays the nation. The sim can change policy, though that should be rare.
-- Derived: economy (from settlements), technology (highest settlement), territory and total population, relations (from the diplomacy web).
-- A nation's policy derives from its dominant culture and is also influenced by the factions present in it.
+- **Settlement**: name; nation (or independent); dominant culture; demographic breakdown by culture; population; technology level; founded date. Biome and elevation are shown from the map.
+- **Nation**: name; dominant culture; government type; capital; founded date. Shown, not stored: its settlements, territory, total population, relations.
+- **Culture**: name; exactly one language.
+- **Language**: common letters or sounds, ones to avoid, typical syllable patterns, stress or emphasis, example names, plus free write.
+- **Biome**: see Biomes.
+- **Faction / people group**: name; type; size (membership, and the number of nations it is in).
+- **Geographical feature**: name; kind; size where it applies; location.
+- **Landmark**: name; kind; location.
+- **Road**: name; the settlements it connects.
+- **Info node**: general information not tied to one object. Mostly free write.
+- **Group** (e.g. a mountain range): its own name and entry. Members keep their own entries.
+- **Timeline event**: date; title; the entries involved; free write. Entries show the events that involve them.
+- **Diplomacy strand**: see Diplomacy.
 
-**Culture**
-- Name; exactly one language; weighted leanings (the same focuses as nations).
-- No official branching: cultures have no recorded parent. The sim can still create new cultures.
-
-**Language**
-- Stores general rules: common letters or sounds, ones to avoid, typical syllable patterns, stress or emphasis, example names, plus free write.
-- Checks names and possibly generates them, for settlements, nations, features, and "names".
-- Assigned to cultures and culture-adjacent groups. No regional accents.
-- A name never changes when possession changes. It changes only if I edit it.
-
-**Biome**
-- Name; resistance to terrain change; major resources; hostility.
-- Economy and population are derived from the resources and hostility.
-
-**Resource**
-- A fixed list of general raw materials, which I can edit and add custom items to. Includes a manufactured goods category with sub-items (e.g. weapons).
-- Each has a technology requirement to harvest (e.g. oil higher than wood or fish).
-- Used for biome resources and settlement imports and exports.
-
-**Minor faction / people group** (institutions, etc.)
-- Name; type; free write. They organize people and operate as their own little nations, in a sense.
-- Policy: weighted focuses. A faction's policies influence the policies of nations.
-- Territory: derived the same way as nations (from settlements, constrained by geographical features, optional painting), but on its own overlay, separate from nations and cultures.
-- Size: membership plus the number of nations it is present in.
-- Influence: varies by faction. Usually determined by size and by overlaps in culture and economy. Factions influence the actions of the settlements, nations, and cultures they overlap with.
-- A settlement's happiness and loyalty override faction influence. Happiness is the softer override and loyalty is the harder one.
+Place entries (settlements, landmarks, features) show the elevation at their spot, read from the map, and can be filtered and compared by it.
 
 ## Diplomacy
 
-- A web of connections. Nodes: nations, cultures, and minor factions or people groups.
-- Strands are mutual. A pair can have more than one strand. Each has a base type plus a free-write section.
-- The sim can change the web when something happens.
+- A web of connections between nations, cultures, and factions or people groups.
+- Strands are mutual. A pair can have more than one strand. Each has a base type (Allied, Friendly, Neutral, Tense, Hostile, At war, Trade partner) plus a free-write section.
+- The web changes only when I change it.
 
-## Time and timelines
+## Timelines
 
-- Real-world calendar and time scale. A day is the smallest unit.
-- Time plays in real time, 10 seconds per day by default, and can be sped up or slowed down. No rewinding.
-- The sim timeline records everything the sim does.
-- I can make as many separate timelines of my own as I like.
+- Real-world calendar. Dates to the day.
+- As many timelines of my own as I like.
+- No playback.
 
-## Simulation (optional layer)
+## Languages
 
-- Optional; the app works fully without it. Inspiration: WorldBox (not Azgaar's sim).
-- Macro only: groups, settlements, cultures, nations, factions. No individuals.
-- I seed everything. After that the sim takes over: it grows, spreads, and develops things, and can create new ones.
-- Inputs: biomes, geography (height and features), and my settings. Geographic, cultural, political, and ecological constraints keep it realistic. Dominance and imbalance are acceptable outcomes.
-- Its output is tied to the library (cultures, languages, regions) and informs my decisions.
-- **Events it produces:** settlement effects, culture effects, rebellions (often accompanied by war), wars and diplomacy changes, policy changes, natural disasters.
-- **Natural disasters:** real-world types. The chance of each is set by local ecology. They can change terrain.
-- **Autopause:** the sim pauses when a nation, settlement, culture, or faction is created or destroyed, whether I or the sim caused it. Each pause can be turned off.
-- **Tuning:** growth rate, constraint strength, and a chaos factor (frequency of major events and overall volatility).
-- **Locking:** both settings and individual entries can be locked to preserve a specific identity.
-- A successful rebellion ends with the settlement independent.
+- A language stores general rules (see its fields). It checks names and can generate them, for settlements, nations, features, and personal names. Landmarks are not covered.
+- Assigned to cultures and culture-adjacent groups.
 
 ## Explicitly not wanted
 
+- Simulation of any kind: growth, sim events, playback, rewinding.
 - Family trees
-- Rewinding time
 - Regional accents
 - Culture branching
 - A "vassal or tributary" diplomacy type
-
-## Suggested by Claude, reviewed and accepted
-
-- Settlement: a "founded" date. Nation: capital and founded date.
-- Policy focus list: Economy, Military, Expansion, Technology, Stability, Culture, Diplomacy.
-- Diplomacy base types: Allied, Friendly, Neutral, Tense, Hostile, At war, Trade partner.
-- Geographical feature fields: name, kind, size (where it applies), location. Landmark fields: name, kind, location. Road fields: name and the settlements it connects (no road types).
-- Timeline event fields: date, title, the entries involved, free write. Entries show the events that involve them.
-- Removing or moving a node returns terrain to what I painted (base layer plus node effects).
-- The language's "names" scope means personal names. Landmarks are not covered.
+- Ocean biomes and ocean depth
+- A grid overlay on the map
+- Importing Nortantis maps
 
 ## Build decisions (the "how")
 
 Most implementation is left to code's judgement. Decided so far:
 
-- **Platform:** a web app, like the other projects, hosted on GitHub Pages. (A desktop app was considered and set aside.)
-- **Storage:** local. No cloud or site database. The mechanism is left to code.
-- **Saving:** autosave to local browser storage, plus manual export and import of a world as a file. No backup reminders.
-- **Simulation:** included if it fits. If it would make the site too big for GitHub Pages, it is left out.
-- **Build order:** macro to micro, with a test checkpoint at the end of each stage:
-  1. Foundation: up to 3 worlds, create and delete, autosave, export and import.
-  2. Map: image backdrop, painting the data layer (land, ocean, biomes), overlay toggles.
-  3. Libraries: biomes, resources, cultures, languages, with their fields.
-  4. Map items: settlements, features, landmarks, roads, info nodes, groups, entries with images, search.
-  5. Nations, factions, and the diplomacy web, with territory overlays.
-  6. Time and timelines.
-  7. Simulation, in sub-steps (growth, culture, rebellions and war, disasters, then tuning, locking, and autopause), each tested on its own.
-  8. Language tools: name checking and generation. Independent of the others, so it could go earlier.
+- **Stack:** the same as my other apps (React, TypeScript, Vite, Tailwind, installable web app).
+- **Existing work:** Stage 1 (worlds, autosave, export/import, 3 worlds, the app's style) stays as the foundation. The first version's map branch (`stage-2-map`, a square grid) is not merged; the polygon map replaces it.
+- **Polygons:** a Voronoi polygon map (with a small, openly licensed library such as d3-delaunay), evened out with Lloyd relaxation. The world stores the polygons themselves, not just a random seed, so later changes to the generator never change an existing map.
+- **Coastlines and borders:** noisy edges, written for this app from Amit Patel's published description (Red Blob Games).
+- **Icons:** drawn in code as a swappable set, so hand-drawn art could replace them later.
+- **Left to the stages:** the drawing technology and the number of polygons per map are decided in Stage 2 and written down in `docs/decisions.md`, for me to test.
+
+### Build order
+
+Macro to micro, with a test checkpoint at the end of each stage.
+
+1. **Foundation** (done): worlds, autosave, export and import. Before Stage 2, the simulation leftovers are removed from the code and the notes.
+2. **Polygon map and the atlas look:** map setup (size in km, blank start), polygons, drawing land and water (brush, fill, undo), zoom and pan, the km readout. Atlas drawing: parchment, inked noisy coastlines, coast shading, waves.
+   *Checkpoint:* draw a continent and judge the atlas look.
+3. **Biomes and the painterly look:** the starter land biomes with colors and atlas icon sets, painting biomes, tree and dune icons, the style toggle.
+   *Checkpoint:* paint biomes and flip between the two looks.
+4. **Elevation and terrain icons:** elevation tools, the starter terrain icons, elevation and icons shaping each other (icons win), the elevation readout and overlay.
+   *Checkpoint:* shape a mountain range both ways and read the heights.
+5. **Rivers, lakes and waterfalls**, following the elevation.
+   *Checkpoint:* draw a river system.
+6. **Random generation:** land, elevation, terrain icons, rivers and biomes, then edited by hand.
+   *Checkpoint:* generate several worlds and edit one.
+7. **Entries:** the built-in types and fields, entry pages that follow the style toggle, free write, images, links, search.
+   *Checkpoint:* write up a handful of entries and find them again.
+8. **Map items:** nodes (settlements, landmarks, features, info nodes, groups), labels and icons (plain or node), roads, place entries showing biome and elevation, decorations (compass rose, scale bar, ships).
+   *Checkpoint:* place and label a region's settlements and roads.
+9. **Peoples and regions:** nations, cultures and factions; hand-painted region overlays; the diplomacy web.
+   *Checkpoint:* paint borders and set up relations.
+10. **Timelines.**
+    *Checkpoint:* build a timeline and see events on entries.
+11. **Languages and names:** rules, name checking and generation. Independent of the rest, so it could go earlier.
+    *Checkpoint:* define a language and generate names.
 
 ## Open items
 
-- Placement of the simulation and the language tools in the build order (the order above was accepted as a whole, with these two flexible).
-- Data structure: how entries, nodes, and links are shaped. Left to code, but costly to change after material is entered.
+- Rivers drawn by hand: drawn exactly where I put them, or routed downhill by the app? To settle at Stage 5.
+- Elevation overlay: contour lines, shading, or both. Claude Code picks at Stage 4 unless I say otherwise.
+- Where the language tools go in the build order.
