@@ -16,9 +16,9 @@ export interface View {
 
 export const ATLAS = {
   ink: '#3b2f22',
-  /** Multiplied over the paper on water: a cool blue-grey, so the yellow paper does not turn it green. */
-  sea: '#a3bcd4',
-  seaShade: 'rgba(52, 78, 82, 0.42)',
+  /** Multiplied over the paper on water: a darker brown than the land (Caleb: brown, not blue). */
+  sea: '#d6c29e',
+  seaShade: 'rgba(96, 70, 40, 0.4)',
   landShade: 'rgba(110, 82, 48, 0.32)',
   /** In map units. */
   coastInk: 0.75,

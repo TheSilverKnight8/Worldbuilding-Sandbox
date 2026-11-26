@@ -91,7 +91,7 @@ The spec left two things to this stage: the drawing technology and the number of
 | Technology | The browser's 2D canvas. | Inked lines, textures, icons and lettering (later stages) are what it is built for; it draws like a printed map. |
 | Sizes | In map units, so the look scales like a printed map when zooming. Thin lines never get thinner than about one screen pixel. | |
 | Paper | A parchment texture made in code (soft blotches from layered smooth noise, plus grain), repeated seamlessly. | Spec: art drawn in code. |
-| Sea | A cool blue-grey multiplied over the paper, darker along the coast (a blurred band about 9 units wide). | A greener tint looked olive on the yellow paper. |
+| Sea | A darker brown than the land, multiplied over the paper, darker still along the coast (a blurred band about 9 units wide). | Caleb: brown, not blue (after trying a blue-grey at the Stage 2 checkpoint). Easy to make lighter instead. |
 | Waves | 3 rings off the coast, at 2.4, 5.0 and 7.6 units, thin ink at half strength. | Nortantis offers up to 5 rings. |
 | Land | The paper itself, slightly darker just inside the coast. | |
 | Ink | The coastline in dark brown ink, 0.75 units wide; a frame around the map. | |
