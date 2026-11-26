@@ -89,10 +89,41 @@ export interface MapInfo {
   biomeSlots: (string | null)[];
   /** True once the starter biomes were added, so they are not added again after Caleb deletes them. */
   biomesSeeded: boolean;
+  /** Blob ID of the base elevation (Stage 4): Int16 meters above sea level per cell, as painted. Land only. */
+  elevationBlob: string;
+  /** Icons placed one by one by hand (Stage 4), in the order they were placed. */
+  icons: PlacedIcon[];
 }
 
 /** How a biome shows on the fantasy atlas (Stage 3): a set of icons drawn in code, or nothing. */
 export type IconSet = 'deciduous' | 'pine' | 'jungle' | 'cactus' | 'shrub' | 'grass' | 'dunes' | 'reeds' | 'none';
+
+/** Elevation-based geography (Stage 4): the starter set of terrain icons. */
+export type TerrainKind = 'hill' | 'mountain' | 'volcano' | 'plateau' | 'valley' | 'canyon' | 'cliff' | 'pass';
+
+/** Anything that can be placed as a single icon: terrain, or a biome's plants and ground. */
+export type IconKind = TerrainKind | Exclude<IconSet, 'none'>;
+
+export const TERRAIN_KINDS: readonly TerrainKind[] = ['hill', 'mountain', 'volcano', 'plateau', 'valley', 'canyon', 'cliff', 'pass'];
+export const ICON_KINDS: readonly IconKind[] = [...TERRAIN_KINDS, 'deciduous', 'pine', 'jungle', 'cactus', 'shrub', 'grass', 'dunes', 'reeds'];
+
+/**
+ * An icon placed by hand. It stays exactly where Caleb put it. Terrain icons also shape
+ * the elevation around them, and win over it ("icons come before elevation").
+ */
+export interface PlacedIcon {
+  id: string;
+  kind: IconKind;
+  /** Ground point, in map units. */
+  x: number;
+  y: number;
+  /** Size in map units (height of the icon; length for rotatable ones). */
+  size: number;
+  /** Direction in degrees, for cliffs, canyons and valleys. */
+  angle?: number;
+  /** Meters: the top of a hill, mountain, volcano or plateau; how deep a valley, canyon, pass or cliff drop goes. */
+  meters?: number;
+}
 
 /** A biome's structured fields. Biomes are for land only. */
 export interface BiomeFields {

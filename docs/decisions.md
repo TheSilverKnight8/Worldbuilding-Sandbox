@@ -10,7 +10,8 @@ The build order is in `SPEC.md` ("Build order"), agreed with Caleb: 11 stages, m
 
 1. Foundation **(done)**, then the cleanup of simulation leftovers **(done)**.
 2. Polygon map and the atlas look **(done)**.
-3. Biomes and the painterly look **(this stage)**.
+3. Biomes and the painterly look **(done)**.
+4. Elevation and terrain icons **(this stage)**.
 
 The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not merged; the polygon map replaces it. The branch is kept for reference.
 
@@ -27,6 +28,11 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Painterly sea (Stage 3) | Blue. |
 | Starter biomes (Stage 3) | Fewer, simpler: a short list of broad biomes. |
 | Edges between biomes on the painterly map (Stage 3) | Soft, blended. |
+| Placing icons (Stage 4) | Besides brushes, a way to place single icons, trees and other non-mountain icons included. |
+| Hover (Stage 4) | The polygon under the mouse is outlined. |
+| Elevation and the coast (Stage 4) | Elevation is for land only; the coast stays where it was painted. Lowering stops at sea level, and raising the sea does nothing. |
+| Cliffs, canyons and valleys (Stage 4) | Single icons you can rotate. |
+| Mountain size (Stage 4) | Close to Nortantis's, which are bigger than the first ones drawn here. |
 
 ## Platform
 
@@ -165,8 +171,92 @@ The spec left two things to this stage: the drawing technology and the number of
 
 | Item | Choice |
 | --- | --- |
-| Where | **Atlas / Painterly** in the toolbar. |
+| Where | **Atlas / Painterly** over the map's top-right corner (moved there in Stage 4, see "Editor layout"). |
 | Remembered | Per world, on this computer (not part of the world, so not in exports). Entry pages will follow it (Stage 7). |
+
+## Elevation and terrain icons (Stage 4)
+
+### Elevation
+
+| Item | Choice |
+| --- | --- |
+| Stored | One height per cell, in whole meters from 0 to 9,000. Land only; water reads 0. |
+| New land | Starts at 100 m (low plains). |
+| The coast | Elevation never turns land into water or water into land (Caleb): lowering stops at 0 m, and the elevation brush does nothing on water. |
+| Brush | **Set** (an exact height), **Raise** and **Lower** (meters per dab at the brush's center, fading to nothing at its rim), **Smooth** (moves heights toward the average of their neighbors). There is no elevation fill. |
+| Alt+click | In Elevation mode, picks the height under the cursor into Set. |
+
+### Hills and mountains drawn by the app
+
+| Item | Choice |
+| --- | --- |
+| Where | Every land cell whose final height is 500 m or more gets a hill; 1,500 m or more, a mountain. One per cell, jittered a little, the same every time. Plants (biome icons) are not drawn on those cells. |
+| Size | Matched to Nortantis (Caleb asked for this during the stage): a mountain is about 2.75 cell spacings wide, a hill about 1.4. Mountains grow up to a fifth larger toward 5,000 m, so higher ranges read taller. |
+| How the size was matched | From Nortantis's source (`IconDrawer.java`, `ImageCache.java`, `SettingsGenerator.java`): a mountain icon defaults to 20.5 / 11 of the mean cell width, times the default mountain scale for new maps (1.2), so about 2.24 mean cell widths; a hill to 10.5 / 11 × 1.2, about 1.15. Here a cell is about 1.23 spacings wide (measured on a 16,000-cell map). Only these numbers were taken; no code or art. |
+| Outlines | Lines thicken with size, but less than in proportion, so large mountains are not drawn in heavy strokes. |
+
+### Terrain icons placed by hand (icons come before elevation)
+
+| Icon | What it does to the ground around it | Default |
+| --- | --- | --- |
+| Hill | Raises it to at least the hill's top, falling off softly | 700 m |
+| Mountain | Raises it to at least the peak | 2,500 m |
+| Volcano | The same, with smoke (and lava on the painterly map) | 3,000 m |
+| Plateau | Raises a flat top with steep edges | 1,200 m |
+| Valley | Lowers a long, wide trough along its direction | 400 m deep |
+| Canyon | Lowers a long, narrow cut along its direction | 900 m deep |
+| Cliff | Raises the ground on one side of its line by the drop | 300 m drop |
+| Pass | Lowers a small dip: a way through a range | 600 m deep |
+
+- The order is: valleys, canyons and passes cut in first, then cliffs, then hills, mountains, volcanoes and plateaus last, as "at least this high". So the ground under a mountain placed by hand always reads (close to) its peak, whatever was painted under it.
+- A terrain icon placed by hand stays where Caleb put it. Painting elevation under it never moves or removes it.
+- The app does not draw its own hills and mountains under a hill, mountain, volcano or plateau placed by hand. A pass clears them in a gap around it; a valley, canyon or cliff clears them along its length. Passes, valleys, canyons and cliffs placed by hand are drawn over everything, as marks cut into the land.
+- Cliffs, canyons and valleys have a direction, 0 to 180° (Caleb: single icons you rotate).
+- Plants placed by hand (trees, cacti, shrubs, grass, dunes, reeds) are pictures only: they change neither the biome nor the elevation.
+- Icons can be placed anywhere on the map, water included, but they only shape land.
+
+### Icons mode (placing single icons)
+
+| Item | Choice |
+| --- | --- |
+| Pick | Any terrain icon, or any plant or ground icon (the same pictures as the biome icons), from the panel on the right. The panel shows each one as drawn on the map. |
+| Place | Click the map. The new icon is selected, so it can be adjusted at once. |
+| Settings | Size in km; height, depth or drop in meters (terrain icons); direction (cliffs, canyons, valleys). Set before placing, or edit the selected icon. |
+| Select, move, delete | Click an icon to select it; drag to move it; `Delete` or `Backspace` removes it; `Escape` lets go. Clicking the map takes focus away from the panel's fields (keeping what was typed), so `Delete` then works on the map. |
+| Undo | Placing, moving, editing and deleting share the undo history with painting. Edits to the same icon less than a second apart (dragging the direction slider, typing a number) are one step. |
+
+### Hover outline
+
+The polygon under the mouse is outlined in red, along its wiggly edges as the map draws them, in every mode.
+
+### Elevation readout and overlay
+
+The spec left the form of the overlay to this stage ("contour lines, shading, or both"). Picked: both, with the shading as colors by height.
+
+| Item | Choice |
+| --- | --- |
+| Readout | The height in meters, in the bar under the map, beside the position, land or water, and the biome. |
+| Overlay | The **Elevation** button over the map's top-right corner. Land is colored by height, from green lowland through yellow, orange and brown to grey and white at 5,000 m and above. While it is on, these colors cover the biome colors, so the two cannot be confused. |
+| Contour lines | Every 250 m, heavier every 1,000 m, along the cells' wiggly edges. |
+| Icons | Drawn half see-through while the overlay is on, so the colors show under the mountains. |
+| Key | A small color key in the map's bottom-left corner while the overlay is on. |
+| Remembered | No: the overlay is off when a world opens. |
+
+### Editor layout
+
+| Item | Choice | Why |
+| --- | --- | --- |
+| Toolbar | One row at a fixed height; it scrolls sideways if the window is too narrow. | With the elevation tools it wrapped to two rows in some modes, so the map jumped up and down when the mode changed. |
+| View controls | The Elevation overlay, Atlas / Painterly and Fit buttons sit over the map's top-right corner. | They are about how the map is shown, not about painting, and this frees the toolbar. |
+
+### Format
+
+- Format version **5** adds the elevation layer (a blob, two bytes per cell) and the list of placed icons (ID, kind, position, size, and direction and meters where the kind has them).
+- A Stage 3 map (format 4) opens with its land at 100 m and no placed icons. A missing elevation layer is not reported as damage.
+
+### Speed
+
+In the test browser (no graphics card), a full redraw with the overlay on took about 80 to 110 ms; the height colors, like the painterly colors, are repainted only where heights change.
 
 ## Data structure (agreed with Caleb)
 

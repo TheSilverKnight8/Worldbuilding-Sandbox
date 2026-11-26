@@ -1,4 +1,4 @@
-import { RECORD_KINDS, type FieldValue, type MapInfo, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
+import { ICON_KINDS, RECORD_KINDS, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
 
 // Every world carries a format version, both in this browser's storage and in an
 // exported file. When the shape of a world changes, FORMAT_VERSION goes up and
@@ -10,9 +10,10 @@ import { RECORD_KINDS, type FieldValue, type MapInfo, type RecordKind, type Worl
 //   2  Only on the abandoned `stage-2-map` branch: a square-grid map (no longer used).
 //   3  Stage 2: the polygon map (WorldDoc.map), with its polygons and land as blobs.
 //   4  Stage 3: biomes on the map (a biome grid blob and biome slots).
+//   5  Stage 4: elevation (a base elevation blob) and icons placed by hand.
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 4;
+export const FORMAT_VERSION = 5;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
@@ -40,13 +41,37 @@ function upgrade(raw: Record<string, unknown>, from: number): Record<string, unk
     const m = rec(o.map);
     o = { ...o, map: { ...m, biomeBlob: `${String(m.landBlob)}-biomes`, biomeSlots: [null], biomesSeeded: false } };
   }
+  // 4 -> 5: a map gets a base elevation (no blob yet: land is read as low plains) and no placed icons.
+  if (from < 5 && o.map) {
+    const m = rec(o.map);
+    o = { ...o, map: { ...m, elevationBlob: `${String(m.landBlob)}-elevation`, icons: [] } };
+  }
   return o;
+}
+
+const ICON_SET = new Set<string>(ICON_KINDS);
+
+function readIcons(v: unknown): PlacedIcon[] {
+  if (!Array.isArray(v)) return [];
+  const out: PlacedIcon[] = [];
+  const ids = new Set<string>();
+  for (const item of v.slice(0, 20000)) {
+    const r = rec(item);
+    if (!isStr(r.id) || ids.has(r.id) || !isStr(r.kind) || !ICON_SET.has(r.kind) || !isNum(r.x) || !isNum(r.y) || !isPos(r.size)) continue;
+    ids.add(r.id);
+    const icon: PlacedIcon = { id: r.id, kind: r.kind as IconKind, x: r.x, y: r.y, size: r.size };
+    if (isNum(r.angle)) icon.angle = r.angle;
+    if (isNum(r.meters)) icon.meters = r.meters;
+    out.push(icon);
+  }
+  return out;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const isDate = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
 const isPos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const KINDS = new Set<string>(RECORD_KINDS);
 
 function readMap(v: unknown): MapInfo | null {
@@ -67,6 +92,8 @@ function readMap(v: unknown): MapInfo | null {
     biomeBlob: isStr(m.biomeBlob) ? m.biomeBlob : `${m.landBlob}-biomes`,
     biomeSlots: slots,
     biomesSeeded: m.biomesSeeded !== false,
+    elevationBlob: isStr(m.elevationBlob) ? m.elevationBlob : `${m.landBlob}-elevation`,
+    icons: readIcons(m.icons),
   };
 }
 

@@ -3,10 +3,11 @@ import { MAX_WORLDS } from '../config';
 import { addWorld, deleteWorldData, getBlob, listBlobs, listWorlds, putBlob, readDoc, saveWorld, storageMessage, writeWorld } from './db';
 import { newId } from './ids';
 import { MAX_BIOMES, biomeRecord, seedBiomes, slotFor } from './map/biomes';
-import { DEFAULT_CELLS, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
+import { DEFAULT_CELLS, elevationFromBlob, elevationToBlob, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
+import { DEFAULT_LAND_ELEVATION } from './map/terrain';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
-import { metaOf, type BiomeFields, type IconSet, type MapInfo, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
+import { metaOf, type BiomeFields, type IconSet, type MapInfo, type PlacedIcon, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
 
 export interface SaveStatus {
   state: 'saved' | 'saving' | 'error';
@@ -281,6 +282,7 @@ export function flushSaves(): Promise<void> {
     const type = 'application/octet-stream';
     blobs.push({ worldId: doc.id, id: doc.map.landBlob, type, data: landToBlob(mapData.land) });
     blobs.push({ worldId: doc.id, id: doc.map.biomeBlob, type, data: landToBlob(mapData.biome) });
+    blobs.push({ worldId: doc.id, id: doc.map.elevationBlob, type, data: elevationToBlob(mapData.elevation) });
   }
   dirty = false;
   layersDirty = false;
@@ -355,14 +357,16 @@ export interface MapData {
   land: Uint8Array;
   /** One byte per cell: an index into MapInfo.biomeSlots (0 = no biome). Only land cells have biomes. */
   biome: Uint8Array;
+  /** The painted base elevation in meters per cell (Stage 4). Only land cells count. Terrain icons shape it further (see lib/map/terrain.ts). */
+  elevation: Int16Array;
 }
 
 let mapData: MapData | null = null;
 /** The land or biomes changed since the last save. */
 let layersDirty = false;
 
-/** 'land': cells changed land or water. 'biome': cells changed biome. 'all': a different map (opened, set up, closed) or a biome deleted. */
-export type MapChange = 'land' | 'biome' | 'all';
+/** 'land': cells changed land or water. 'biome': cells changed biome. 'elevation': the painted elevation changed. 'all': a different map (opened, set up, closed) or a biome deleted. */
+export type MapChange = 'land' | 'biome' | 'elevation' | 'all';
 type MapListener = (change: MapChange) => void;
 const mapListeners = new Set<MapListener>();
 
@@ -390,13 +394,22 @@ export function mapEdited() {
 }
 
 async function loadMap(worldId: string, m: MapInfo): Promise<{ data: MapData; reset: boolean } | null> {
-  const [g, l, b] = await Promise.all([getBlob(worldId, m.graphBlob), getBlob(worldId, m.landBlob), getBlob(worldId, m.biomeBlob)]);
+  const [g, l, b, e] = await Promise.all([getBlob(worldId, m.graphBlob), getBlob(worldId, m.landBlob), getBlob(worldId, m.biomeBlob), getBlob(worldId, m.elevationBlob)]);
   const graph = g ? await graphFromBlob(g.data) : null;
   if (!graph || graph.cellCount !== m.cellCount) return null;
-  const land = await landFromBlob(l?.data, graph.cellCount);
-  // A map from before Stage 3 has no biome grid yet: that is expected, not damage.
-  const biome = b ? await landFromBlob(b.data, graph.cellCount) : new Uint8Array(graph.cellCount);
-  return { data: { graph, land: land ?? new Uint8Array(graph.cellCount), biome: biome ?? new Uint8Array(graph.cellCount) }, reset: !land || !biome };
+  const n = graph.cellCount;
+  const land = (await landFromBlob(l?.data, n)) ?? null;
+  // A map from before Stage 3 has no biome grid, and one from before Stage 4 no elevation: that is expected, not damage.
+  const biome = b ? await landFromBlob(b.data, n) : new Uint8Array(n);
+  let elevation = e ? await elevationFromBlob(e.data, n) : null;
+  const elevationDamaged = !!e && !elevation;
+  const landOk = land ?? new Uint8Array(n);
+  if (!elevation) {
+    // Land with no elevation yet starts as low plains.
+    elevation = new Int16Array(n);
+    for (let c = 0; c < n; c++) if (landOk[c]) elevation[c] = DEFAULT_LAND_ELEVATION;
+  }
+  return { data: { graph, land: landOk, biome: biome ?? new Uint8Array(n), elevation }, reset: !land || !biome || elevationDamaged };
 }
 
 /** Limits for a map's size, in kilometers. */
@@ -438,6 +451,8 @@ export async function setupMap(widthKm: number, heightKm: number): Promise<Resul
     biomeBlob: `${landBlob}-biomes`,
     biomeSlots: [null],
     biomesSeeded: false,
+    elevationBlob: `${landBlob}-elevation`,
+    icons: [],
   };
   try {
     // The polygons are written once, now; land and biomes save with the world from here on.
@@ -446,7 +461,7 @@ export async function setupMap(widthKm: number, heightKm: number): Promise<Resul
     return { ok: false, reason: storageMessage(e) };
   }
   if (state.open.kind !== 'ready' || state.open.world.id !== worldId) return { ok: false, reason: 'The world was closed.' };
-  mapData = { graph, land: new Uint8Array(graph.cellCount), biome: new Uint8Array(graph.cellCount) };
+  mapData = { graph, land: new Uint8Array(graph.cellCount), biome: new Uint8Array(graph.cellCount), elevation: new Int16Array(graph.cellCount) };
   layersDirty = true;
   updateWorld((d) => {
     const s = seedBiomes(d, map);
@@ -506,4 +521,11 @@ export function deleteBiome(id: string) {
   });
   // 'all' also clears the undo history, which could otherwise paint the deleted biome's slot back.
   emitMap('all');
+}
+
+// ---------------------------------------------------------------- icons placed by hand (Stage 4)
+
+/** Replaces the open map's placed icons (placing, moving, editing, deleting all go through here; undo keeps the arrays). */
+export function setPlacedIcons(icons: PlacedIcon[]) {
+  updateWorld((d) => (d.map ? { ...d, map: { ...d.map, icons } } : d));
 }

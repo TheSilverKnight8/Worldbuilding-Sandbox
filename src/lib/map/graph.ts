@@ -260,3 +260,12 @@ export async function landFromBlob(blob: Blob | undefined, cellCount: number): P
   if (!blob || blob.size !== cellCount) return null;
   return new Uint8Array(await blob.arrayBuffer());
 }
+
+export function elevationToBlob(elevation: Int16Array) {
+  return new Blob([elevation.slice().buffer], { type: 'application/octet-stream' });
+}
+
+export async function elevationFromBlob(blob: Blob | undefined, cellCount: number): Promise<Int16Array | null> {
+  if (!blob || blob.size !== cellCount * 2) return null;
+  return new Int16Array(await blob.arrayBuffer());
+}

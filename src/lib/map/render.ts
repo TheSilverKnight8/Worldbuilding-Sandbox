@@ -2,7 +2,8 @@ import { NO_BIOME_COLOR, type SlotLook } from './biomes';
 import { addCell, cellShapes } from './cells';
 import type { Coast } from './coast';
 import type { Graph } from './graph';
-import { minPixels, sprite, type IconStyle, type Placement } from './icons';
+import { ROTATABLE, minPixels, sprite, type IconStyle, type Placement } from './icons';
+import type { NoisyEdges } from './noisy';
 import { PAPER_TILE_PIXELS, PAPER_TILE_UNITS, paperTexture } from './paper';
 
 // Draws the map with the browser's 2D canvas, in map units, in one of two looks:
@@ -72,7 +73,54 @@ export interface Scene {
   biome: Uint8Array;
   coast: Coast | null;
   looks: (SlotLook | null)[];
+  /** All icons to draw (biome plants, the app's hills and mountains, icons placed by hand), sorted top to bottom. */
   icons: Placement[];
+  /** Final elevation per cell, in meters (Stage 4). */
+  heights: Int16Array;
+  /** Draw the elevation overlay (height colors and contour lines). */
+  overlay: boolean;
+  noisy: NoisyEdges;
+}
+
+/**
+ * The elevation overlay: land colored by height (covering the biome colors while it is on,
+ * so it cannot be mistaken for them), and a contour line every `contour` meters (heavier
+ * every `contourMajor`). The key under the map shows the same stops.
+ */
+export const OVERLAY = {
+  stops: [
+    [0, '#4f8c6c'],
+    [250, '#8db87c'],
+    [600, '#d9d58f'],
+    [1000, '#e8bb76'],
+    [1500, '#cf8d55'],
+    [2500, '#9a6447'],
+    [3500, '#7d6a64'],
+    [5000, '#f3f1ed'],
+  ] as [number, string][],
+  alpha: 0.94,
+  blend: 1.6,
+  contour: 250,
+  contourMajor: 1000,
+  line: 'rgba(60, 38, 20, 0.6)',
+  /** How solid the icons are drawn over the overlay. */
+  iconAlpha: 0.5,
+};
+
+function heightColor(h: number) {
+  const stops = OVERLAY.stops;
+  if (h <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    if (h > stops[i][0]) continue;
+    const [h0, c0] = stops[i - 1];
+    const [h1, c1] = stops[i];
+    const t = (h - h0) / (h1 - h0);
+    const a = parseInt(c0.slice(1), 16);
+    const b = parseInt(c1.slice(1), 16);
+    const mix = (shift: number) => Math.round(((a >> shift) & 255) + (((b >> shift) & 255) - ((a >> shift) & 255)) * t);
+    return `rgb(${mix(16)}, ${mix(8)}, ${mix(0)})`;
+  }
+  return stops[stops.length - 1][1];
 }
 
 function polyPath(path: Path2D, pts: Float32Array, close: boolean) {
@@ -88,6 +136,9 @@ export class MapRenderer {
   private lctx: CanvasRenderingContext2D;
   private field = document.createElement('canvas');
   private fieldState: { graph: Graph; looksKey: string; land: Uint8Array; biome: Uint8Array } | null = null;
+  private heightField = document.createElement('canvas');
+  private heightState: { graph: Graph; land: Uint8Array; heights: Int16Array } | null = null;
+  private contours: { heights: Int16Array; land: Uint8Array; minor: Path2D; major: Path2D } | null = null;
   private pattern: CanvasPattern | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -132,6 +183,13 @@ export class MapRenderer {
     if (style === 'atlas') this.drawAtlas(view, dpr, scene, land, shore, sea, quick);
     else this.drawPainterly(view, dpr, scene, land, shore, sea, quick);
     ctx.restore();
+
+    if (scene.overlay) {
+      ctx.save();
+      ctx.clip(rect);
+      this.drawOverlay(view, dpr, scene, land);
+      ctx.restore();
+    }
 
     this.drawIcons(view, dpr, scene, style);
 
@@ -312,10 +370,128 @@ export class MapRenderer {
     }
   }
 
+  /** The elevation overlay: land tinted by height (softly blended), with contour lines along cell edges. */
+  private drawOverlay(view: View, dpr: number, scene: Scene, land: Path2D) {
+    const ctx = this.ctx;
+    const g = scene.graph;
+    const s = view.scale * dpr;
+    this.updateHeightField(scene);
+    ctx.save();
+    ctx.clip(land, 'evenodd');
+    ctx.globalAlpha = OVERLAY.alpha;
+    ctx.filter = `blur(${OVERLAY.blend * s}px)`;
+    ctx.drawImage(this.heightField, 0, 0, g.width, g.height);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1;
+    const c = this.contourPaths(scene);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = OVERLAY.line;
+    ctx.lineWidth = Math.max(0.35, 0.9 / s);
+    ctx.stroke(c.minor);
+    ctx.lineWidth = Math.max(0.8, 1.8 / s);
+    ctx.stroke(c.major);
+    ctx.restore();
+  }
+
+  /** Height colors per cell, repainted only where heights or land changed. */
+  private updateHeightField(scene: Scene) {
+    const g = scene.graph;
+    const fw = Math.ceil(g.width * FIELD_PER_UNIT);
+    const fh = Math.ceil(g.height * FIELD_PER_UNIT);
+    const f = this.heightField.getContext('2d')!;
+    const shapes = cellShapes(g);
+    const st = this.heightState;
+    const colorOf = (c: number) => {
+      if (scene.land[c]) return heightColor(scene.heights[c]);
+      for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1]; k++) {
+        const e = g.cellEdges[k];
+        const n = g.edges[e * 4 + 2] === c ? g.edges[e * 4 + 3] : g.edges[e * 4 + 2];
+        if (n >= 0 && scene.land[n]) return heightColor(scene.heights[n]);
+      }
+      return heightColor(0);
+    };
+    const paint = (cells: Iterable<number>) => {
+      const paths = new Map<string, Path2D>();
+      for (const c of cells) {
+        const color = colorOf(c);
+        let p = paths.get(color);
+        if (!p) paths.set(color, (p = new Path2D()));
+        addCell(p, shapes, c);
+      }
+      for (const [color, p] of paths) {
+        f.fillStyle = color;
+        f.fill(p);
+        f.strokeStyle = color;
+        f.lineWidth = 0.6;
+        f.stroke(p);
+      }
+    };
+    if (!st || st.graph !== g || this.heightField.width !== fw || this.heightField.height !== fh) {
+      this.heightField.width = fw;
+      this.heightField.height = fh;
+      f.setTransform(FIELD_PER_UNIT, 0, 0, FIELD_PER_UNIT, 0, 0);
+      const all: number[] = [];
+      for (let c = 0; c < g.cellCount; c++) all.push(c);
+      paint(all);
+      this.heightState = { graph: g, land: scene.land.slice(), heights: scene.heights.slice() };
+      return;
+    }
+    const affected = new Set<number>();
+    for (let c = 0; c < g.cellCount; c++) {
+      if (st.land[c] === scene.land[c] && st.heights[c] === scene.heights[c]) continue;
+      st.land[c] = scene.land[c];
+      st.heights[c] = scene.heights[c];
+      affected.add(c);
+      for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1]; k++) {
+        const e = g.cellEdges[k];
+        const n = g.edges[e * 4 + 2] === c ? g.edges[e * 4 + 3] : g.edges[e * 4 + 2];
+        if (n >= 0) affected.add(n);
+      }
+    }
+    if (affected.size) {
+      f.setTransform(FIELD_PER_UNIT, 0, 0, FIELD_PER_UNIT, 0, 0);
+      paint(affected);
+    }
+  }
+
+  /** Contour lines: the (wiggly) edges between land cells whose heights fall in different bands. */
+  private contourPaths(scene: Scene) {
+    const c = this.contours;
+    if (c && c.heights === scene.heights && c.land === scene.land) return c;
+    const g = scene.graph;
+    const minor = new Path2D();
+    const major = new Path2D();
+    for (let e = 0; e < g.edgeCount; e++) {
+      const a = g.edges[e * 4 + 2];
+      const b = g.edges[e * 4 + 3];
+      if (b < 0 || !scene.land[a] || !scene.land[b]) continue;
+      const ha = scene.heights[a];
+      const hb = scene.heights[b];
+      const ba = Math.floor(ha / OVERLAY.contour);
+      const bb = Math.floor(hb / OVERLAY.contour);
+      if (ba === bb) continue;
+      const isMajor = Math.floor(ha / OVERLAY.contourMajor) !== Math.floor(hb / OVERLAY.contourMajor);
+      const path = isMajor ? major : minor;
+      const pts = scene.noisy.get(e);
+      path.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) path.lineTo(pts[i], pts[i + 1]);
+    }
+    this.contours = { heights: scene.heights, land: scene.land, minor, major };
+    return this.contours;
+  }
+
   /** Biome icons, stamped in screen pixels so they stay crisp. Icons too small to read at this zoom are left out. */
   private drawIcons(view: View, dpr: number, scene: Scene, style: MapStyle) {
     if (!scene.icons.length) return;
-    const ctx = this.ctx;
+    // With the elevation overlay on, the icons are drawn on a layer and laid over the map
+    // half see-through, so the height colors show under the mountains.
+    const faded = scene.overlay;
+    const ctx = faded ? this.lctx : this.ctx;
+    if (faded) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, this.layer.width, this.layer.height);
+    }
     const s = view.scale * dpr;
     const cw = this.canvas.width;
     const ch = this.canvas.height;
@@ -330,9 +506,23 @@ export class MapRenderer {
       const y = oy + p.y * s;
       if (x < -px || y < -px * 0.2 || x > cw + px || y > ch + px * 1.3) continue;
       const sp = sprite(p.set, p.variant, px, style);
-      ctx.drawImage(sp.canvas, Math.round(x - sp.ax), Math.round(y - sp.ay));
+      if (p.angle && ROTATABLE.has(p.set)) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate((p.angle * Math.PI) / 180);
+        ctx.drawImage(sp.canvas, -sp.ax, -sp.ay);
+        ctx.restore();
+      } else ctx.drawImage(sp.canvas, Math.round(x - sp.ax), Math.round(y - sp.ay));
     }
     ctx.restore();
+    if (faded) {
+      const main = this.ctx;
+      main.save();
+      main.setTransform(1, 0, 0, 1, 0, 0);
+      main.globalAlpha = OVERLAY.iconAlpha;
+      main.drawImage(this.layer, 0, 0);
+      main.restore();
+    }
   }
 
   /** Rings of waves at set distances off the coast: each ring is a wide stroke with a slightly narrower one cut out of it. */
