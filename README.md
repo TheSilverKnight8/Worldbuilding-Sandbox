@@ -1,9 +1,9 @@
 # Worldbuilding-Sandbox
 A worldbuilding sandbox
 
-**Worldbuilding Sandbox** is a personal worldbuilding app. It is being built in stages from Caleb's spec ([`SPEC.md`](SPEC.md)). The builder's choices are written down in [`docs/decisions.md`](docs/decisions.md).
+**Worldbuilding Sandbox** is a personal, creative worldbuilding app: a map drawn as a fantasy atlas or a painterly map, with entries, regions, diplomacy, timelines and languages. There is no simulation. It is being built in stages from Caleb's spec ([`SPEC.md`](SPEC.md)); the reasoning behind the spec is in [`docs/concept-rethink.md`](docs/concept-rethink.md), and the builder's choices are written down in [`docs/decisions.md`](docs/decisions.md).
 
-It is an installable web app (PWA) for Chrome on a computer, hosted on GitHub Pages. Everything runs in the browser. Worlds are saved in the browser on your computer and nowhere else.
+It is an installable web app (PWA) for Chrome on a computer (Mac or Windows), hosted on GitHub Pages. Everything runs in the browser. Worlds are saved in the browser on your computer and nowhere else.
 
 ## What is in it
 
@@ -13,7 +13,7 @@ It is an installable web app (PWA) for Chrome on a computer, hosted on GitHub Pa
 | Saving | Changes save by themselves half a second after the last edit, in the browser's storage (IndexedDB). The header shows Saving / Saved. The app asks Chrome to keep its storage even when the disk runs low; Home says whether Chrome agreed. |
 | Export and import | Export saves a world as one file (`<name>.world.json`), images included. Import adds a world from such a file. Files carry a format version, so files exported today still open after the app changes. |
 
-Coming next (Stage 2): the map. The image backdrop, then painting land, ocean and biomes.
+Coming next (Stage 2): the polygon map. Set its size in kilometers, draw land and water, and see it drawn in the fantasy-atlas style.
 
 ## Run it on your computer
 

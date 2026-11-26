@@ -26,7 +26,7 @@ export function WorldPage() {
           </span>
           <h1 className="mt-5 text-5xl">{open.world.name}</h1>
           <p className="mt-2 text-muted">Created {dateFormat.format(new Date(open.world.createdAt))}</p>
-          <p className="mt-6 text-sm text-muted">The map comes in Stage 2: the backdrop image, then painting land, ocean and biomes.</p>
+          <p className="mt-6 text-sm text-muted">The map comes in Stage 2: a polygon map with land and water, drawn in the fantasy-atlas style.</p>
         </div>
       </div>
     );

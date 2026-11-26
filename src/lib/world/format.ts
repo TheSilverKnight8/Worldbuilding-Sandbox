@@ -42,7 +42,6 @@ export function readWorld(raw: unknown, version: number): Parsed<WorldDoc> {
     if (isStr(r.text) && r.text) out.text = r.text;
     if (Array.isArray(r.images)) out.images = r.images.filter(isStr);
     if (Array.isArray(r.links)) out.links = r.links.filter(isStr);
-    if (r.locked === true) out.locked = true;
     records[key] = out;
   }
   return {

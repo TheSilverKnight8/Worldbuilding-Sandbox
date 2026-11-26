@@ -4,7 +4,7 @@ import type { WorldBlob, WorldDoc, WorldMeta } from './world/types';
 //
 //   worlds  WorldMeta by world ID: the small list Home shows
 //   docs    { id, version, doc } by world ID: the whole world except its blobs
-//   blobs   WorldBlob by [world ID, blob ID]: images, the map backdrop, map layers
+//   blobs   WorldBlob by [world ID, blob ID]: images and map data
 //
 // Blob keys start with the world ID, so two worlds can never clash and a whole world's
 // blobs can be found or removed in one range.

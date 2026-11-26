@@ -19,7 +19,7 @@ export default defineConfig({
         id: base,
         name: 'Worldbuilding Sandbox',
         short_name: 'Worldbuilding',
-        description: 'Build worlds on a painted map, with entries, libraries, diplomacy, timelines, and an optional simulation.',
+        description: 'A creative worldbuilder: a map drawn as a fantasy atlas or a painterly map, with entries, regions, diplomacy, timelines and languages.',
         lang: 'en',
         start_url: base,
         scope: base,

@@ -6,31 +6,29 @@
 //   name never changes because something else changed.
 // - Structured fields live on the record. Free write and images are optional, so a
 //   map node nobody wrote up costs only its fields and location.
-// - Anything the app or the simulation works out can also be set by hand (Settable).
-// - Big binary data (images, the map backdrop, map layers) is stored apart from the
-//   records, as blobs, and records refer to it by blob ID.
+// - Big binary data (images, map data) is stored apart from the records, as blobs, and
+//   records refer to it by blob ID.
 
-/** Every kind of record the spec names. Each kind's fields are added in the stage that builds it. */
+/** Every kind of record the spec names (SPEC.md, "Entry types and fields"). Each kind's fields are added in the stage that builds it. */
 export type RecordKind =
-  // Map items (Stage 4)
+  // On the map
   | 'settlement'
   | 'feature'
   | 'landmark'
   | 'road'
   | 'info'
   | 'group'
-  // Libraries (Stage 3)
   | 'biome'
-  | 'resource'
-  | 'culture'
-  | 'language'
-  // Nations, factions, diplomacy (Stage 5)
+  // Peoples and diplomacy
   | 'nation'
+  | 'culture'
   | 'faction'
   | 'strand'
-  // Time (Stage 6)
+  // Time
   | 'timeline'
-  | 'event';
+  | 'event'
+  // Language
+  | 'language';
 
 export const RECORD_KINDS: readonly RecordKind[] = [
   'settlement',
@@ -40,40 +38,23 @@ export const RECORD_KINDS: readonly RecordKind[] = [
   'info',
   'group',
   'biome',
-  'resource',
-  'culture',
-  'language',
   'nation',
+  'culture',
   'faction',
   'strand',
   'timeline',
   'event',
+  'language',
 ];
 
-/**
- * A value the app or the simulation works out that can also be set by hand.
- * `auto` is what the app or simulation last worked out (left out for values that are
- * worked out fresh every time, like a nation's total population). `manual` is set by
- * hand; when it is present it wins.
- */
-export interface Settable<T> {
-  auto?: T;
-  manual?: T;
-}
-
-export function settled<T>(v: Settable<T> | undefined, fallback: T): T {
-  if (!v) return fallback;
-  return v.manual !== undefined ? v.manual : v.auto !== undefined ? v.auto : fallback;
-}
-
 /** Values a structured field can hold. Each kind's stage narrows this to real field types. */
-export type FieldValue = string | number | boolean | null | string[] | number[] | Settable<unknown> | { [key: string]: FieldValue };
+export type FieldValue = string | number | boolean | null | string[] | number[] | { [key: string]: FieldValue };
 
 export interface WorldRecord {
   id: string;
   kind: RecordKind;
   name: string;
-  /** Structured fields for this kind (only what the sim reads or changes, or what gets filtered or compared). */
+  /** Structured fields for this kind: only details Caleb would filter or compare by. Everything else is free write. */
   fields: Record<string, FieldValue>;
   /** Free write. Left out when the record is not written up. */
   text?: string;
@@ -81,8 +62,6 @@ export interface WorldRecord {
   images?: string[];
   /** IDs of other records this entry links to. */
   links?: string[];
-  /** A locked record keeps its identity: the simulation does not change it. */
-  locked?: boolean;
 }
 
 /** One world: everything except its blobs. */
