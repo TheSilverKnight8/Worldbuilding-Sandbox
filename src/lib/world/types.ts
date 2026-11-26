@@ -64,6 +64,27 @@ export interface WorldRecord {
   links?: string[];
 }
 
+/**
+ * The map (Stage 2). A graph of irregular polygons (cells), made once when the map is set
+ * up and stored as a blob, plus one byte per cell saying whether it is land.
+ * Positions are in map units (the long side is 1000); kilometers come from widthKm and heightKm.
+ */
+export interface MapInfo {
+  /** The map's real size, set by Caleb. */
+  widthKm: number;
+  heightKm: number;
+  /** The same size in map units. */
+  width: number;
+  height: number;
+  cellCount: number;
+  /** Seeds the wiggle of coastlines (noisy edges), so they come out the same every time. */
+  seed: number;
+  /** Blob ID of the polygon graph (see lib/map/graph.ts). */
+  graphBlob: string;
+  /** Blob ID of the land grid: one byte per cell, 1 = land, 0 = water. */
+  landBlob: string;
+}
+
 /** One world: everything except its blobs. */
 export interface WorldDoc {
   id: string;
@@ -72,6 +93,8 @@ export interface WorldDoc {
   createdAt: string;
   updatedAt: string;
   records: Record<string, WorldRecord>;
+  /** null until the map is set up. */
+  map: MapInfo | null;
 }
 
 /** What the world list on Home needs, kept apart so Home does not load whole worlds. */

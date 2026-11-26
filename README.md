@@ -11,9 +11,21 @@ It is an installable web app (PWA) for Chrome on a computer (Mac or Windows), ho
 | --- | --- |
 | Worlds | Up to 3 worlds. Create one (it asks for a name), open it, delete it (asks to confirm). Creating or importing a fourth is refused with a message to delete one first. |
 | Saving | Changes save by themselves half a second after the last edit, in the browser's storage (IndexedDB). The header shows Saving / Saved. The app asks Chrome to keep its storage even when the disk runs low; Home says whether Chrome agreed. |
-| Export and import | Export saves a world as one file (`<name>.world.json`), images included. Import adds a world from such a file. Files carry a format version, so files exported today still open after the app changes. |
+| Export and import | Export saves a world as one file (`<name>.world.json`), images and map included. Import adds a world from such a file. Files carry a format version, so files exported today still open after the app changes. |
+| Map | Set the map's size in kilometers. It is made of 16,000 irregular polygons and starts as open water. Draw land and water with a brush or fill; undo and redo. The app draws it as a fantasy atlas: parchment, inked coastlines, shaded water, waves off the coast. A readout gives positions in km. |
 
-Coming next (Stage 2): the polygon map. Set its size in kilometers, draw land and water, and see it drawn in the fantasy-atlas style.
+Coming next (Stage 3): biomes and the painterly look.
+
+### Map controls
+
+| Do | How |
+| --- | --- |
+| Brush, fill, move the map | `B`, `F`, `H` (or hold `Space` and drag, or drag with the middle button) |
+| Swap land and water | `X` |
+| Brush size | `[` and `]`, or the slider |
+| Zoom | Mouse wheel (or trackpad pinch) |
+| Undo, redo | `Ctrl+Z`, `Ctrl+Shift+Z` (or `Ctrl+Y`) |
+| Pick land or water from the map | `Alt`+click |
 
 ## Run it on your computer
 
@@ -38,18 +50,20 @@ To install it: open the site in Chrome and use the install button in the address
 
 In Chrome's storage for the site's address, on this computer only. The address matters: the published site and `localhost` have separate storage, and so do different browsers or Chrome profiles. To move a world from one to another, export it and import it there.
 
-Clearing Chrome's site data for the address deletes the worlds stored there. An exported file is a full copy of a world, images included.
+Clearing Chrome's site data for the address deletes the worlds stored there. An exported file is a full copy of a world, images and map included.
 
 ## Project layout
 
 ```
 src/
-  lib/world/     world shape (records, fields, blobs), format version, export and import files
+  lib/world/     world shape (records, fields, blobs, map), format version, export and import files
+  lib/map/       polygons, noisy edges, coastlines, the atlas drawing, land and water tools
   lib/           browser storage (IndexedDB), app state and autosave
+  map/           map setup, map editor, map canvas
   pages/         Home (the world list), World
   components/    app frame, dialogs, shared pieces
   graphics/      app icon, Croswell Industries logo
 docs/            the builder's decisions
 ```
 
-Built with React, TypeScript, Vite, Tailwind CSS and vite-plugin-pwa. Headings use Norwester by Jamie Wilson (SIL Open Font License, `src/assets/fonts/`).
+Built with React, TypeScript, Vite, Tailwind CSS, vite-plugin-pwa and d3-delaunay (for the polygons). Headings use Norwester by Jamie Wilson (SIL Open Font License, `src/assets/fonts/`).

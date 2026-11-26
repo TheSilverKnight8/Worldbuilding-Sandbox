@@ -15,5 +15,6 @@
 - Up to 3 worlds (`MAX_WORLDS` in `src/config.ts`). Creating or importing a fourth is refused with a message to delete one first.
 - The data shape in `src/lib/world/types.ts` was agreed with Caleb and is costly to change once material is entered: records with an ID and a kind, links by ID only, optional free write and images, blobs stored apart from records. Build on it; ask before changing it.
 - Every stored world and every exported file carries `format` and `version`. Changing what is saved means raising `FORMAT_VERSION` in `src/lib/world/format.ts` and teaching `upgrade()` to bring older worlds forward. Never break old worlds or old export files. Version 2 was used by the abandoned `stage-2-map` branch, so the next format is 3 (see `docs/decisions.md`).
-- Every change to the open world goes through `updateWorld()` in `src/lib/store.ts`, which saves it.
+- Every change to the open world goes through `updateWorld()` in `src/lib/store.ts`, which saves it. The map's land is changed in place by the tools in `src/lib/map/paint.ts`, which call `emitMap()` to redraw and `mapEdited()` when a stroke ends.
+- The map's polygons are stored, never regenerated: changing the generator must not move the polygons of an existing map. The noisy-edge wiggle is seeded per map; changing that code changes how existing coasts are drawn, so treat it like a format change.
 - `npm run typecheck` and `npm run build` must pass.

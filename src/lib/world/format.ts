@@ -1,27 +1,62 @@
-import { RECORD_KINDS, type FieldValue, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
+import { RECORD_KINDS, type FieldValue, type MapInfo, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
 
 // Every world carries a format version, both in this browser's storage and in an
 // exported file. When the shape of a world changes, FORMAT_VERSION goes up and
 // `upgrade` learns to bring older worlds forward, so a world saved today, or a file
 // exported today, still opens later. Never break old worlds.
+//
+// Versions:
+//   1  Stage 1: worlds and records.
+//   2  Only on the abandoned `stage-2-map` branch: a square-grid map (no longer used).
+//   3  Stage 2: the polygon map (WorldDoc.map), with its polygons and land as blobs.
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 3;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
 
 export type Parsed<T> = { ok: true; data: T } | { ok: false; reason: string };
 
-/** Brings an older world up to the current format, one version at a time. Version 1 is the first, so there is nothing to do yet. */
-function upgrade(raw: Record<string, unknown>, _from: number): Record<string, unknown> {
-  return raw;
+/** Brings an older world up to the current format, one version at a time. */
+function upgrade(raw: Record<string, unknown>, from: number): Record<string, unknown> {
+  let o = raw;
+  // 1 -> 3: Stage 1 worlds have no map yet.
+  // 2 -> 3: the abandoned branch's square-grid map is dropped (its grids stay unused in
+  // storage), along with its ocean biomes; the spec has no ocean biomes.
+  if (from < 3) {
+    const records = { ...rec(o.records) };
+    if (from === 2)
+      for (const [id, r] of Object.entries(records)) {
+        const x = rec(r);
+        if (x.kind === 'biome' && rec(x.fields).realm === 'ocean') delete records[id];
+      }
+    o = { ...o, records, map: null };
+  }
+  return o;
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const rec = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const isDate = (v: unknown): v is string => isStr(v) && !Number.isNaN(Date.parse(v));
+const isPos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const KINDS = new Set<string>(RECORD_KINDS);
+
+function readMap(v: unknown): MapInfo | null {
+  const m = rec(v);
+  if (!isPos(m.widthKm) || !isPos(m.heightKm) || !isPos(m.width) || !isPos(m.height) || !Number.isInteger(m.cellCount) || !isPos(m.cellCount)) return null;
+  if (!isStr(m.graphBlob) || !isStr(m.landBlob) || !Number.isInteger(m.seed)) return null;
+  return {
+    widthKm: m.widthKm,
+    heightKm: m.heightKm,
+    width: m.width,
+    height: m.height,
+    cellCount: m.cellCount as number,
+    seed: (m.seed as number) >>> 0,
+    graphBlob: m.graphBlob,
+    landBlob: m.landBlob,
+  };
+}
 
 /**
  * Checks a world (from storage or a file) and returns it in the current format.
@@ -52,6 +87,7 @@ export function readWorld(raw: unknown, version: number): Parsed<WorldDoc> {
       createdAt: isDate(o.createdAt) ? o.createdAt : now,
       updatedAt: isDate(o.updatedAt) ? o.updatedAt : now,
       records,
+      map: readMap(o.map),
     },
   };
 }

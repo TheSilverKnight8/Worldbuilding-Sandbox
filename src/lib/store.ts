@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react';
 import { MAX_WORLDS } from '../config';
-import { addWorld, deleteWorldData, listBlobs, listWorlds, readDoc, storageMessage, writeWorld } from './db';
+import { addWorld, deleteWorldData, getBlob, listBlobs, listWorlds, putBlob, readDoc, saveWorld, storageMessage, writeWorld } from './db';
 import { newId } from './ids';
+import { DEFAULT_CELLS, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
+import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
-import { metaOf, type WorldDoc, type WorldMeta } from './world/types';
+import { metaOf, type MapInfo, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
 
 export interface SaveStatus {
   state: 'saved' | 'saving' | 'error';
@@ -34,6 +36,8 @@ export interface AppState {
   open: OpenWorld;
   save: SaveStatus;
   storage: StorageInfo;
+  /** A message about the open world, shown until dismissed. */
+  notice: string | null;
 }
 
 let state: AppState = {
@@ -42,7 +46,12 @@ let state: AppState = {
   open: { kind: 'none' },
   save: { state: 'saved' },
   storage: { persisted: null, usage: null },
+  notice: null,
 };
+
+export function dismissNotice() {
+  set({ notice: null });
+}
 
 const listeners = new Set<() => void>();
 function set(patch: Partial<AppState>) {
@@ -111,7 +120,7 @@ const FULL = `There are already ${MAX_WORLDS} worlds, the most the app holds. De
 export async function createWorld(name: string): Promise<Result<string>> {
   if (state.worlds.length >= MAX_WORLDS) return { ok: false, reason: FULL, full: true };
   const now = new Date().toISOString();
-  const doc: WorldDoc = { id: newId(), name: name.trim() || 'Untitled world', createdAt: now, updatedAt: now, records: {} };
+  const doc: WorldDoc = { id: newId(), name: name.trim() || 'Untitled world', createdAt: now, updatedAt: now, records: {}, map: null };
   try {
     await writeWorld(metaOf(doc), { id: doc.id, version: FORMAT_VERSION, doc });
   } catch (e) {
@@ -188,9 +197,27 @@ export async function openWorld(id: string) {
       unlock();
       return set({ open: { kind: 'error', id, message: parsed.reason } });
     }
-    set({ open: { kind: 'ready', world: parsed.data }, save: { state: 'saved' } });
+    let world = parsed.data;
+    let lostMap = false;
+    if (world.map) {
+      const loaded = await loadMap(id, world.map);
+      if (stale()) return;
+      if (loaded) mapData = loaded.data;
+      else {
+        // The map's stored data is unreadable. Show the setup screen rather than a broken map.
+        world = { ...world, map: null };
+        lostMap = true;
+      }
+      if (loaded?.landReset) {
+        landDirty = true;
+        lostMap = true;
+      }
+    }
+    set({ open: { kind: 'ready', world }, save: { state: 'saved' } });
+    emitMap('all');
     // A world saved by an older version of the app is saved again in the current format.
-    if (stored.version < FORMAT_VERSION) markDirty();
+    if (stored.version < FORMAT_VERSION || lostMap) markDirty();
+    if (lostMap) set({ notice: 'Part of this map’s stored data could not be read and was reset.' });
   } catch (e) {
     if (stale()) return;
     unlock();
@@ -202,7 +229,9 @@ export async function closeWorld() {
   openToken++;
   await flushSaves();
   unlock();
-  if (state.open.kind !== 'none') set({ open: { kind: 'none' } });
+  mapData = null;
+  landDirty = false;
+  if (state.open.kind !== 'none') set({ open: { kind: 'none' }, notice: null });
 }
 
 /** Changes the open world. Every change goes through here, and saves by itself. */
@@ -237,13 +266,19 @@ export function flushSaves(): Promise<void> {
   const o = state.open;
   if (!dirty || o.kind !== 'ready') return Promise.resolve();
   const doc = o.world;
+  // The map's land saves with the doc, in the same transaction, when it changed.
+  const blobs: WorldBlob[] = [];
+  const withLand = landDirty && mapData !== null && doc.map !== null;
+  if (withLand && mapData && doc.map) blobs.push({ worldId: doc.id, id: doc.map.landBlob, type: 'application/octet-stream', data: landToBlob(mapData.land) });
   dirty = false;
+  landDirty = false;
   flushing = (async () => {
     try {
-      await writeWorld(metaOf(doc), { id: doc.id, version: FORMAT_VERSION, doc });
+      await saveWorld(metaOf(doc), { id: doc.id, version: FORMAT_VERSION, doc }, blobs);
       set({ save: { state: dirty ? 'saving' : 'saved' } });
     } catch (e) {
       dirty = true;
+      if (withLand) landDirty = true;
       set({ save: { state: 'error', message: storageMessage(e) } });
     } finally {
       flushing = null;
@@ -296,4 +331,95 @@ export async function importWorld(file: File): Promise<Result<WorldMeta>> {
   setWorldMeta(meta);
   void refreshStorage();
   return { ok: true, value: meta };
+}
+
+// ---------------------------------------------------------------- the map (Stage 2)
+
+// The open world's polygons and land live here, outside React state: painting changes
+// the land many times a second. The renderer listens for changes.
+export interface MapData {
+  graph: Graph;
+  /** One byte per cell: 1 = land, 0 = water. Changed in place by the painting tools. */
+  land: Uint8Array;
+}
+
+let mapData: MapData | null = null;
+/** The land changed since the last save. */
+let landDirty = false;
+
+/** 'land': cells changed land or water. 'all': a different map (opened, set up, closed). */
+export type MapChange = 'land' | 'all';
+type MapListener = (change: MapChange) => void;
+const mapListeners = new Set<MapListener>();
+
+/** The open world's map data, or null when it has no map. */
+export function getMap() {
+  return mapData;
+}
+
+export function onMapChange(fn: MapListener) {
+  mapListeners.add(fn);
+  return () => {
+    mapListeners.delete(fn);
+  };
+}
+
+/** Tells the renderer the map changed. The painting tools call it after every dab. */
+export function emitMap(change: MapChange) {
+  for (const fn of mapListeners) fn(change);
+}
+
+/** A painting step (stroke, fill, undo) is finished: save the land. */
+export function mapEdited() {
+  landDirty = true;
+  updateWorld((d) => ({ ...d }));
+}
+
+async function loadMap(worldId: string, m: MapInfo): Promise<{ data: MapData; landReset: boolean } | null> {
+  const [g, l] = await Promise.all([getBlob(worldId, m.graphBlob), getBlob(worldId, m.landBlob)]);
+  const graph = g ? await graphFromBlob(g.data) : null;
+  if (!graph || graph.cellCount !== m.cellCount) return null;
+  const land = await landFromBlob(l?.data, graph.cellCount);
+  return { data: { graph, land: land ?? new Uint8Array(graph.cellCount) }, landReset: !land };
+}
+
+/** Limits for a map's size, in kilometers. */
+export const MAP_KM_MIN = 10;
+export const MAP_KM_MAX = 40000;
+/** The long side may be at most this many times the short side, so polygons stay even. */
+export const MAP_MAX_ASPECT = 4;
+
+export function checkMapSize(widthKm: number, heightKm: number): string | null {
+  if (!Number.isFinite(widthKm) || !Number.isFinite(heightKm)) return 'Enter a width and a height.';
+  if (widthKm < MAP_KM_MIN || heightKm < MAP_KM_MIN) return `Each side must be at least ${MAP_KM_MIN} km.`;
+  if (widthKm > MAP_KM_MAX || heightKm > MAP_KM_MAX) return `Each side can be at most ${MAP_KM_MAX.toLocaleString()} km.`;
+  if (Math.max(widthKm, heightKm) / Math.min(widthKm, heightKm) > MAP_MAX_ASPECT) return `The long side can be at most ${MAP_MAX_ASPECT} times the short side.`;
+  return null;
+}
+
+/** Sets up the open world's map: a new polygon graph of the given size in km, all water. */
+export async function setupMap(widthKm: number, heightKm: number): Promise<Result> {
+  const doc = state.open.kind === 'ready' ? state.open.world : null;
+  if (!doc || doc.map) return { ok: false, reason: 'This world already has a map.' };
+  const problem = checkMapSize(widthKm, heightKm);
+  if (problem) return { ok: false, reason: problem };
+  const worldId = doc.id;
+  // Let the screen show that the map is being made before the heavy work starts.
+  await new Promise((r) => window.setTimeout(r, 30));
+  const units = mapUnitsFor(widthKm, heightKm);
+  const seed = newSeed();
+  const graph = generateGraph(units.width, units.height, DEFAULT_CELLS, seed);
+  const map: MapInfo = { widthKm, heightKm, width: units.width, height: units.height, cellCount: graph.cellCount, seed, graphBlob: newId(), landBlob: newId() };
+  try {
+    // The polygons are written once, now; the land saves with the world from here on.
+    await putBlob({ worldId, id: map.graphBlob, type: 'application/octet-stream', data: graphToBlob(graph) });
+  } catch (e) {
+    return { ok: false, reason: storageMessage(e) };
+  }
+  if (state.open.kind !== 'ready' || state.open.world.id !== worldId) return { ok: false, reason: 'The world was closed.' };
+  mapData = { graph, land: new Uint8Array(graph.cellCount) };
+  landDirty = true;
+  updateWorld((d) => ({ ...d, map }));
+  emitMap('all');
+  return { ok: true, value: undefined };
 }
