@@ -208,7 +208,7 @@ The spec left two things to this stage: the drawing technology and the number of
 | Cliff | Raises the ground on one side of its line by the drop | 300 m drop |
 | Pass | Lowers a small dip: a way through a range | 600 m deep |
 
-- The order is: valleys, canyons and passes cut in first, then cliffs, then hills, mountains, volcanoes and plateaus last, as "at least this high". So the ground under a mountain placed by hand always reads (close to) its peak, whatever was painted under it.
+- The order is: valleys, canyons and passes cut in first, then cliffs, then hills, mountains, volcanoes and plateaus last, as "at least this high". The polygon right under a hill, mountain or volcano placed by hand reads its full height, and the ground falls off softly around it, whatever was painted there.
 - A terrain icon placed by hand stays where Caleb put it. Painting elevation under it never moves or removes it.
 - The app does not draw its own hills and mountains under a hill, mountain, volcano or plateau placed by hand. A pass clears them in a gap around it; a valley, canyon or cliff clears them along its length. Passes, valleys, canyons and cliffs placed by hand are drawn over everything, as marks cut into the land.
 - Cliffs, canyons and valleys have a direction, 0 to 180° (Caleb: single icons you rotate).

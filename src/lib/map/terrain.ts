@@ -1,6 +1,6 @@
 import { mixSeed, seededRandom } from '../rng';
 import type { IconKind, PlacedIcon, TerrainKind } from '../world/types';
-import { cellsNear, type Graph } from './graph';
+import { cellAt, cellsNear, type Graph } from './graph';
 
 // Elevation (Stage 4). The ground has a painted base elevation (meters, land only; the
 // coast stays where it was painted). Terrain icons placed by hand shape it on top, and
@@ -128,6 +128,11 @@ export function computeHeights(g: Graph, land: Uint8Array, base: Int16Array, ico
           h[c] = h[c] + meters * along * (1 - smoothstep(-w, w, v));
         }
       });
+      // The polygon right under a hill, mountain or volcano reads its full height, wherever its center is.
+      if (effect === 'raise') {
+        const peak = cellAt(g, center.x, center.y);
+        if (peak >= 0 && land[peak]) h[peak] = Math.max(h[peak], meters);
+      }
     }
   const out = new Int16Array(g.cellCount);
   for (let c = 0; c < g.cellCount; c++) out[c] = Math.round(Math.min(ELEVATION_MAX, Math.max(0, h[c])));
