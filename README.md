@@ -15,12 +15,12 @@ It is an installable web app (PWA) for Chrome on a computer (Mac or Windows), ho
 | Map | Set the map's size in kilometers. It is made of 16,000 irregular polygons and starts as open water. Draw land and water with a brush or fill; undo and redo. A readout gives positions in km. |
 | Two looks | **Atlas**: a fantasy atlas in ink on parchment, a pale sea and darker olive-tan land, matched to a Nortantis map of Caleb's; biomes show only through icons. **Painterly**: a colorful painted map, blue sea, biome colors blended softly, the same icons in color. Toggle over the map's top-right corner; remembered per world on this computer. |
 | Biomes | Starts with a short list of broad biomes (forest, pine forest, jungle, grassland, desert, swamp, tundra, ice). Each has a color and a set of icons (trees, pines, palms, cacti, shrubs, grass, dunes, reeds, or none) drawn in code. Paint them on land with a brush or fill; add, rename, recolor, change icons, delete. |
-
 | Elevation | Every land cell has a height in meters (new land starts at 100 m). Paint it with Set, Raise, Lower and Smooth; the coast stays as painted. Terrain icons placed by hand shape it; the elevation itself places no icons. The readout shows the height under the mouse; the **Elevation** overlay colors land by height, with contour lines and a key. |
-| Icons | Drawn in code in an ink style matched to a Nortantis map of Caleb's: mountains, hills, volcanoes, plateaus and cliffs after the bonus art pack for Nortantis, plants after the FA01-Temperate pack (style references only; no pack art is used). **Place** single icons by hand: mountains, hills, volcanoes, plateaus and cliffs, which shape the ground around them, and trees, palms, cacti, shrubs, grass, dunes and reeds. **Select** any icon, a biome's plants included, to move, resize or delete it; one of the app's own then stays as you leave it. Cliffs face any way (a drop facing away shows only its rim) and can be even, fade out to one side, or be broken. Undo and redo. |
+| Rivers | **Draw** a river from its source to its mouth, kept exactly as drawn, or **Route downhill**: click where it starts and the app runs it down the heightmap to the sea, a lake, the map's edge or another river. Rivers narrow toward their source and widen where others join them, and are drawn on land only. **Select** a river to set its width at the mouth, make it flow the other way, or delete it. Lakes are water painted inside land. Where a river crosses a cliff, a waterfall appears. Undo and redo. |
+| Icons | Drawn in code in an ink style matched to a Nortantis map of Caleb's: mountains, hills, volcanoes, plateaus and cliffs after the bonus art pack for Nortantis, plants after the FA01-Temperate pack (style references only; no pack art is used). **Place** single icons by hand: mountains, hills, volcanoes, plateaus and cliffs, which shape the ground around them, trees, palms, cacti, shrubs, grass, dunes and reeds, and waterfalls. **Select** any icon, a biome's plants and the waterfalls on rivers included, to move, resize or delete it; one of the app's own then stays as you leave it. Cliffs and waterfalls face any of 8 directions, each drawn as seen from that side (a drop facing away shows only its rim); cliffs can be even, fade out to one side, or be broken. Undo and redo. |
 | Hover | The polygon under the mouse is outlined. |
 
-Coming next (Stage 5): rivers, lakes and waterfalls.
+Coming next (Stage 6): random generation.
 
 ### Map controls
 
@@ -34,6 +34,8 @@ Coming next (Stage 5): rivers, lakes and waterfalls.
 | Pick land, water, a biome or a height from the map | `Alt`+click |
 | Icons mode: place or select | **Place** / **Select** in the toolbar |
 | Icons mode: delete the selected icon, let go of it | `Delete` (or `Backspace`), `Escape` |
+| Rivers mode: draw, route or select | **Draw** / **Route downhill** / **Select** in the toolbar |
+| Rivers mode: delete the selected river, let go of it | `Delete` (or `Backspace`), `Escape` |
 
 ## Run it on your computer
 
@@ -65,10 +67,10 @@ Clearing Chrome's site data for the address deletes the worlds stored there. An 
 ```
 src/
   lib/world/     world shape (records, fields, blobs, map), format version, export and import files
-  lib/map/       polygons, noisy edges, coastlines, biomes, elevation and terrain, icons, both looks, the painting tools
-  lib/map/art/   the icons' drawings, in code (terrain, cliffs, plants)
+  lib/map/       polygons, noisy edges, coastlines, biomes, elevation and terrain, rivers, icons, both looks, the painting tools
+  lib/map/art/   the icons' drawings, in code (terrain, cliffs, plants, waterfalls)
   lib/           browser storage (IndexedDB), app state and autosave
-  map/           map setup, map editor, map canvas, biome panel, icons panel
+  map/           map setup, map editor, map canvas, biome panel, rivers panel, icons panel
   pages/         Home (the world list), World
   components/    app frame, dialogs, shared pieces
   graphics/      app icon, Croswell Industries logo

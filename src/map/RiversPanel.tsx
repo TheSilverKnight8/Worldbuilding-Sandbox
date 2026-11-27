@@ -90,7 +90,7 @@ export function RiversPanel({ tool, newWidthKm, onNewWidthKm, selected, selected
         <h2 className="label-caps mb-3 text-muted">New river</h2>
         <KmField label="Width at the mouth" value={round(newWidthKm)} onChange={onNewWidthKm} />
         <p className="mt-3 text-xs text-muted">{HELP[tool]}</p>
-        <p className="mt-2 text-xs text-muted">Where a river crosses a cliff whose drop faces you, a waterfall appears. Waterfalls can also be placed one by one in Icons mode. Lakes are water painted inside land.</p>
+        <p className="mt-2 text-xs text-muted">Where a river crosses a cliff, a waterfall appears, facing the way the cliff does. Waterfalls can also be placed one by one in Icons mode. Lakes are water painted inside land.</p>
       </section>
     </aside>
   );

@@ -7,7 +7,7 @@ import { buildCoast, type Coast } from '../lib/map/coast';
 import { cellAt, type Graph } from '../lib/map/graph';
 import { iconBox, iconHit, minPixels, onSpritesReady, placeIcons, placementLook, variantsOf, type Placement } from '../lib/map/icons';
 import { NoisyEdges } from '../lib/map/noisy';
-import { riverAt, riverShapes, riverWaterfalls, routeRiver, simplify, snapToRivers, underRivers } from '../lib/map/rivers';
+import { riverAt, riverShapes, riverWaterfalls, routeRiver, simplify, snapToRivers, underRivers, type RiverShape } from '../lib/map/rivers';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
 import { computeHeights, underTerrain } from '../lib/map/terrain';
@@ -127,6 +127,35 @@ export function MapCanvas(props: Props) {
   const live = useRef({ style, looks, placed: shownIcons, overlay, hidden, shapes });
   live.current = { style, looks, placed: shownIcons, overlay, hidden, shapes };
 
+  /** What the icon list was last made from. */
+  const builtFrom = useRef<{ placed: PlacedIcon[]; hidden: Set<string>; shapes: RiverShape[] } | null>(null);
+  /** The icons as the map draws them, back to front: made again when anything they depend on has changed. */
+  const buildIcons = useCallback(() => {
+    const map = getMap();
+    const l = live.current;
+    const b = builtFrom.current;
+    if (!map || (!iconsStale.current && b && b.placed === l.placed && b.hidden === l.hidden && b.shapes === l.shapes)) return icons.current;
+    // A biome's plants stay off terrain icons placed by hand and off the rivers.
+    const keepOff = underTerrain(map.graph, l.placed);
+    const wet = underRivers(map.graph, l.shapes);
+    for (let c = 0; c < keepOff.length; c++) keepOff[c] |= wet[c];
+    const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, keepOff, l.hidden);
+    // Waterfalls where rivers cross cliffs.
+    for (const w of riverWaterfalls(l.shapes, l.placed, l.hidden)) {
+      let h = 0;
+      for (let i = 0; i < w.key.length; i++) h = (h * 31 + w.key.charCodeAt(i)) | 0;
+      all.push({ x: w.x, y: w.y, size: w.size, set: 'waterfall', variant: Math.abs(h) % variantsOf('waterfall'), angle: w.angle, auto: w.key });
+    }
+    for (const p of l.placed) all.push(placedToPlacement(p));
+    // Back to front by ground point (a waterfall's point is its lip, so it goes by its foot, in front of its cliff).
+    const depth = (p: Placement) => (p.set === 'waterfall' ? p.y + p.size * 0.7 : p.y);
+    all.sort((a, b) => depth(a) - depth(b));
+    icons.current = all;
+    iconsStale.current = false;
+    builtFrom.current = { placed: l.placed, hidden: l.hidden, shapes: l.shapes };
+    return all;
+  }, [seed]);
+
   const draw = useCallback(() => {
     const r = renderer.current;
     const map = getMap();
@@ -140,34 +169,15 @@ export function MapCanvas(props: Props) {
       heights.current = computeHeights(map.graph, map.land, map.elevation, l.placed);
       heightsStale.current = false;
     }
-    if (iconsStale.current) {
-      // A biome's plants stay off terrain icons placed by hand and off the rivers.
-      const keepOff = underTerrain(map.graph, l.placed);
-      const wet = underRivers(map.graph, l.shapes);
-      for (let c = 0; c < keepOff.length; c++) keepOff[c] |= wet[c];
-      const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, keepOff, l.hidden);
-      // Waterfalls where rivers cross cliffs.
-      for (const w of riverWaterfalls(l.shapes, l.placed, l.hidden)) {
-        let h = 0;
-        for (let i = 0; i < w.key.length; i++) h = (h * 31 + w.key.charCodeAt(i)) | 0;
-        all.push({ x: w.x, y: w.y, size: w.size, set: 'waterfall', variant: Math.abs(h) % variantsOf('waterfall'), angle: w.angle, auto: w.key });
-      }
-      for (const p of l.placed) all.push(placedToPlacement(p));
-      // Back to front by ground point (a waterfall's point is its lip, so it goes by its foot, in front of its cliff).
-      const depth = (p: Placement) => (p.set === 'waterfall' ? p.y + p.size * 0.7 : p.y);
-      all.sort((a, b) => depth(a) - depth(b));
-      icons.current = all;
-      iconsStale.current = false;
-    }
     const v = viewRef.current;
     r.draw(
       v,
-      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: icons.current, heights: heights.current, overlay: l.overlay, noisy, rivers: l.shapes },
+      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: buildIcons(), heights: heights.current, overlay: l.overlay, noisy, rivers: l.shapes },
       l.style,
       painting.current,
     );
     setDrawn(v);
-  }, [noisy, seed]);
+  }, [noisy, buildIcons]);
 
   /** Draws on the next animation frame (painting). */
   const drawSoon = useCallback(() => {
@@ -350,7 +360,8 @@ export function MapCanvas(props: Props) {
       if (iconTool === 'select') {
         // Only icons drawn at this zoom: too small to see is too small to pick.
         const scale = viewRef.current.scale;
-        for (const q of icons.current) if (q.size * scale >= minPixels(q.set) && iconHit(q, p.x, p.y)) hit = q;
+        // As the map shows them now, even if a change (an undo, say) has not been drawn yet.
+        for (const q of buildIcons()) if (q.size * scale >= minPixels(q.set) && iconHit(q, p.x, p.y)) hit = q;
       } else for (const q of placed.map(placedToPlacement).sort((a, b) => a.y - b.y)) if (iconHit(q, p.x, p.y)) hit = q;
       if (hit) {
         let id = hit.placed;

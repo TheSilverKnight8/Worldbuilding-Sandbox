@@ -11,7 +11,8 @@ The build order is in `SPEC.md` ("Build order"), agreed with Caleb: 11 stages, m
 1. Foundation **(done)**, then the cleanup of simulation leftovers **(done)**.
 2. Polygon map and the atlas look **(done)**.
 3. Biomes and the painterly look **(done)**.
-4. Elevation and terrain icons **(this stage)**; the map icons were redrawn during it.
+4. Elevation and terrain icons **(done)**; the map icons were redrawn during it.
+5. Rivers, lakes and waterfalls **(this stage)**; cliffs and waterfalls got a drawing for each direction during it.
 
 The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not merged; the polygon map replaces it. The branch is kept for reference.
 
@@ -32,7 +33,7 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Placing icons (Stage 4) | Besides brushes, a way to place single icons, trees and other non-mountain icons included. |
 | Hover (Stage 4) | The polygon under the mouse is outlined. |
 | Elevation and the coast (Stage 4) | Elevation is for land only; the coast stays where it was painted. Lowering stops at sea level, and raising the sea does nothing. |
-| Cliffs, canyons and valleys (Stage 4) | Single icons you can rotate. (Valleys, passes and canyons were later dropped, below.) |
+| Cliffs, canyons and valleys (Stage 4) | Single icons you can rotate. (Valleys, passes and canyons were later dropped, below; in Stage 5 turning gave way to a drawing per direction.) |
 | Mountain size (Stage 4) | Close to Nortantis's, which are bigger than the first ones drawn here. |
 | Icon art (Stage 4) | The first code-drawn icons did not look right. Caleb's own Nortantis map is the reference for the whole look. Mountains and hills in the style of the free bonus art pack for Nortantis; every other icon in the style of the FA01-Temperate pack. Icons drawn in code after comparing with AI images (Canva), with heavier shading, slightly thicker lines and rounder peaks; then a little lighter. Caleb will ask for custom icons once the first pass is done. |
 | Terrain icons kept (Stage 4) | Mountains, hills, volcanoes, plateaus and cliffs. Valleys and passes are not needed; canyons dropped for now (cliffs cover a drop). |
@@ -44,6 +45,7 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Rivers drawn by hand (Stage 5, the spec's open item) | Both: draw one exactly where wanted, or click a source and let the app route it downhill. |
 | Waterfalls (Stage 5) | Both: one appears by itself where a river crosses a cliff, and they can be placed by hand. |
 | Lakes (Stage 5) | Stay painted water inside land. |
+| Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
 
 ## Platform
 
@@ -225,7 +227,7 @@ During Stage 4 the app drew hills (from 500 m) and mountains (from 1,500 m) by i
 - Cliffs step the ground first, then hills, mountains, volcanoes and plateaus raise it, as "at least this high". The polygon right under a hill, mountain or volcano placed by hand reads its full height, and the ground falls off softly around it, whatever was painted there.
 - A terrain icon placed by hand stays where Caleb put it. Painting elevation under it never moves or removes it.
 - A biome's plants are not drawn under a terrain icon placed by hand (around a hill's, mountain's or volcano's ground point, on a plateau's top, along a cliff), so they do not crowd it.
-- **Cliffs** are one side only (Caleb). Their direction is the compass direction the drop faces, 0 to 359° (180 = south, toward the viewer; new cliffs start there). A drop facing down the map shows a tall hatched rock face with cracks, ledges and loose rock at its foot; facing up the map, only the rim shows, with broken blocks along its lip and no rocks (rocks made it read as facing the viewer). Neither has inked sides: the rim thins out and the face fades at each end, so cliffs placed end to end join into one. Shape (chosen when placing, or later): even, fades out to the left, fades out to the right (as seen with the drop facing you), or broken in two.
+- **Cliffs** are one side only (Caleb). Their direction is the compass direction the drop faces, one of 8 (south, toward the viewer, for new cliffs; see Stage 5 for the drawings). A drop facing down the map shows a tall hatched rock face with cracks, ledges and loose rock at its foot; facing up the map, only the rim shows, with broken blocks along its lip and no rocks (rocks made it read as facing the viewer). Neither has inked sides: the rim thins out and the face fades at each end, so cliffs placed end to end join into one. Shape (chosen when placing, or later): even, fades out to the left, fades out to the right (as seen with the drop facing you), or broken in two.
 - Plants placed by hand (trees, cacti, shrubs, grass, dunes, reeds) are pictures only: they change neither the biome nor the elevation.
 - Icons can be placed anywhere on the map, water included, but they only shape land.
 - **Dropped:** valleys and passes (Caleb: not needed) and canyons (Caleb: dropped for now; they did not read as precipices, and cliffs cover a drop). `SPEC.md`'s starter set was updated to match, at Caleb's request.
@@ -237,9 +239,9 @@ During Stage 4 the app drew hills (from 500 m) and mountains (from 1,500 m) by i
 | Pick | Any terrain icon, or any plant or ground icon (the same drawings as the biome icons), from the panel on the right. The panel shows each one as drawn on the map. |
 | Place | With **Place**, click the map. The new icon is selected, so it can be adjusted at once. Clicking an icon placed by hand selects it instead. Each new icon gets one of its kind's drawings at random, and keeps it. |
 | Select | With **Select**, click any icon, a biome's plants included (Caleb: each icon can be sized on its own). One of the app's own icons is taken over: it becomes an icon placed by hand, in the same spot, at the same size, with the same drawing, and the app leaves out its own copy. From then on it stays as Caleb leaves it, even if the biome under it changes. Deleting it leaves the spot empty; undo gives it back to the app. Icons too small to see at the current zoom cannot be picked. |
-| Settings | Width in km; height or drop in meters (terrain icons); for cliffs, which way the drop faces and the shape, with a small preview. Set before placing, or edit the selected icon. |
+| Settings | Width in km; height or drop in meters (terrain icons); for cliffs and waterfalls, which of the 8 directions it faces, with a small preview; for cliffs, the shape. Set before placing, or edit the selected icon. |
 | Move, delete | Drag an icon to move it; `Delete` or `Backspace` removes the selected one; `Escape` lets go. Clicking the map takes focus away from the panel's fields (keeping what was typed), so `Delete` then works on the map. |
-| Undo | Placing, taking over, moving, editing and deleting share the undo history with painting. Edits to the same icon less than a second apart (dragging the direction slider, typing a number) are one step. |
+| Undo | Placing, taking over, moving, editing and deleting share the undo history with painting. Edits to the same icon less than a second apart (typing a number) are one step. |
 
 ### Hover outline
 
@@ -273,6 +275,62 @@ The spec left the form of the overlay to this stage ("contour lines, shading, or
 ### Speed
 
 In the test browser (no graphics card), on a map whose land is all forest with a long range (about 29,000 trees and 170 mountains): a full redraw took about 150 to 240 ms, rebuilding the icon list included (about 40 to 45 ms); the first drawing after zooming in a long way, while new sizes are made, up to about 390 ms. A brush stroke over that forest ran at about 17 ms a frame typically and 83 ms at worst, against 117 ms at worst with the first icons. Zooming and panning move the last drawing until they stop, so they stay smooth. A computer with a graphics card draws faster. The height colors, like the painterly colors, are repainted only where heights change.
+
+## Rivers, lakes and waterfalls (Stage 5)
+
+### Rivers
+
+| Item | Choice |
+| --- | --- |
+| Stored | Each river is its points from source to mouth (map units) and its own width at the mouth. Its smoothed line, its width along the way, where it joins another river, and the waterfalls on it are worked out each time it is drawn, never stored. |
+| **Draw** | Drag from the source to the mouth. The river is kept where it was drawn: the stroke is thinned to the points needed to keep its shape (within 0.12 cell spacings) and rounded. A stroke shorter than 1.5 cell spacings adds nothing. Ending it within 0.6 cell spacings of another river joins it there. |
+| **Route downhill** | Click where a river starts (on land). The app follows the heightmap down, cell by cell, to the sea, a lake, the map's edge, or another river (joining it once within 0.7 cell spacings). Pits and flat ground are first filled in (as rain would pool and spill over), so every land cell drains somewhere. The line wanders a little between cell centers so it does not look ruled; the same click gives the same river. |
+| **Select** | Click a river. The panel gives its width at the mouth (in km, editable), its length, **Flow the other way** (swaps source and mouth) and **Delete** (or `Delete`/`Backspace`); `Escape` or clicking away lets go. A new river is selected once added. |
+| Width | A new river is 0.2 cell spacings wide at its mouth by default (5.5 km on a 4,000 km map), set in the panel before drawing. Each river narrows toward its source, to a quarter of its width there. A river that joins another widens it from the join down: widths add as the square root of the sum of their squares, so two equal rivers make one about 1.4 times as wide. |
+| Drawn | On land only: rivers stop at the shore (a stroke that runs on into the sea, or across a lake, is not drawn there). Under the icons. Atlas: two thin ink banks with pale water between; painterly: blue water with a darker edge. Very thin rivers are a single line. |
+| Plants | A biome's plants are not drawn along rivers. |
+| Undo | Adding, routing, editing the width (typing is one step), flowing the other way and deleting share the undo history with painting and icons. |
+
+### Lakes
+
+Painted water inside land (Caleb), with the Land & water tools. Routed rivers end at them as at the sea, and rivers are not drawn across them.
+
+### Waterfalls
+
+| Item | Choice |
+| --- | --- |
+| By themselves | Where a river crosses a cliff's rim, a waterfall on the rim at the crossing, facing the way the cliff faces, as wide as the larger of 0.4 times the cliff's width and three times the river's width there. They follow the cliff and the river as either changes. |
+| By hand | **Waterfall** in Icons mode (under Water), with a width and a direction. |
+| Taking over | **Select** takes over a waterfall the app drew, as with a biome's plants: it becomes a placed icon facing the same way, and the app leaves out its own copy. |
+
+### Directions: a drawing per direction (cliffs and waterfalls)
+
+The map is seen from the south and from above, so a face always hangs straight down the page; only the rim's line changes with the direction. Turning the south-facing drawing tipped the face, rocks and water sideways, so each of the 8 directions has its own drawing (Caleb):
+
+| Facing | Cliff | Waterfall |
+| --- | --- | --- |
+| S | The face hanging below the rim (as before). | The sheet falling between hatched rock (as before). |
+| SE, SW | The rim slants; the face hangs below it, leaning a little toward the drop, so less of it shows. | The lip slants; the water falls straight down from it, leaning a little the same way. |
+| E, W | The rim runs up and down the page; the face is seen side on, as a narrow band of strokes running down and out toward the drop. | Seen side on: the water pours out over the lip and arcs down toward the drop. |
+| N, NE, NW | The rim (slanting on NE and NW) with the face hidden (as N before). | The lip, the river running to it, and mist rising beyond. |
+
+- Picked with 8 buttons laid out as a compass ("Drop faces" for cliffs, "Falls toward" for waterfalls), which replace the 0 to 359° slider.
+- The stored angle is unchanged (compass degrees). Cliffs placed before at other angles are drawn, and shape the ground, as the nearest of the 8.
+- On the painterly map each drawing's fill fades out across the rim toward the foot of its face (or across the high ground on the near side of a drop facing away).
+- "Fades out to the left/right" is still as seen with the drop facing you: on a drop facing away it is the other way round on the page.
+
+### Format
+
+- Format version **6** adds the map's rivers: each with an ID, its points from source to mouth, and its width at the mouth. A Stage 4 map (format 5) opens with no rivers.
+- In a file, rivers that make no sense (no ID, an ID used twice, a width not above 0, fewer than two points) are left out; points off the map are moved onto its edge.
+
+### Also fixed
+
+- A click right after an undo or redo could be checked against the icons as they were before it (the list was rebuilt on the next frame), so Select could take over an icon that had just been removed. The list is now rebuilt first.
+
+### Speed
+
+A brush stroke over a forest-covered continent (the Stage 4 measure): about 17 ms a frame typically, 67 ms at worst.
 
 ## Data structure (agreed with Caleb)
 

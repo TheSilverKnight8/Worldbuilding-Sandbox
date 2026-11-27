@@ -129,6 +129,9 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
       const icon: PlacedIcon = { id: newId(), kind: p.set, x: p.x, y: p.y, size: p.size, variant: p.variant };
       // A hill or mountain keeps the height of the ground it stood on, so taking it over does not raise the land.
       if (KINDS[p.set].meters) icon.meters = Math.max(1, Math.round(meters));
+      // A waterfall the app drew keeps the direction it faced.
+      if (KINDS[p.set].directional) icon.angle = p.angle ?? 180;
+      if (p.shape) icon.shape = p.shape;
       changeIcons([...map.icons, icon], undefined, p.auto ? [...map.hiddenAuto, p.auto] : undefined);
       return icon.id;
     },

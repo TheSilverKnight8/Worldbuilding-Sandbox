@@ -241,6 +241,18 @@ export function smooth(pts: Pt[]): Pt[] {
   return p;
 }
 
+/** Splits long straight stretches into short ones, so a river's width can change along them (its taper, and where others join it). */
+function resample(pts: Pt[], step: number): Pt[] {
+  const out: Pt[] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1];
+    const [bx, by] = pts[i];
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+    for (let k = 1; k <= n; k++) out.push([ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n]);
+  }
+  return out;
+}
+
 /** A river ready to draw: its smoothed line and its width at each point, in map units. */
 export interface RiverShape {
   id: string;
@@ -256,7 +268,7 @@ const taper = (t: number) => 0.25 + 0.75 * Math.pow(Math.max(0, Math.min(1, t)),
  * another river joins it, and that river is wider below the join (widths add as areas do).
  */
 export function riverShapes(rivers: River[], spacing: number): RiverShape[] {
-  const lines = rivers.map((r) => smooth(r.points));
+  const lines = rivers.map((r) => resample(smooth(r.points), spacing * 0.5));
   const lengths = lines.map((pts) => {
     let s = 0;
     for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
