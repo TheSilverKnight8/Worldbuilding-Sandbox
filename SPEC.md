@@ -32,6 +32,7 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 
 - Drawn by the app. No imported images, and no importing of Nortantis maps.
 - A world starts as a randomly generated map or a blank one; either way it can be edited.
+- Random generation is offered only when the map is set up. It has four settings (amount of land, continents or islands, how mountainous, climate) and a preview I can generate again until I keep one. It makes land, elevation, lakes, rivers, biomes and terrain icons (mountains, hills, volcanoes, plateaus, cliffs).
 - Map size is set as width × height in kilometers; the area is shown in km². Distances and coordinates are in kilometers, with a readout under the map. No grid overlay.
 - Built from irregular polygons, like Nortantis, not a square grid.
 
@@ -45,7 +46,7 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 
 - The ocean is just water: no ocean biomes, no depth. The focus is land detail.
 - Land has elevation. It matters for worldbuilding, especially for designing military campaigns, because elevation often decides battles.
-- Placing terrain icons shapes the elevation. Shaping the elevation does not place icons: only icons placed by hand are drawn.
+- Placing terrain icons shapes the elevation. Shaping the elevation does not place icons: only icons placed by hand are drawn, or by random generation, which places them the same way (so they can be moved, resized or deleted).
 - Icons come before elevation. A terrain icon placed by hand stays exactly where I put it, and the elevation under it reads at least that icon's height, whatever is painted around it.
 - Terrain icons, starter set: hills, mountains, volcanoes, plateaus, cliffs. (Valleys and passes are not needed; canyons are dropped for now, since cliffs cover a drop.) Cliffs and waterfalls face any of the 8 compass directions, each drawn as seen from that side.
 - Rivers, lakes and waterfalls follow the elevation. Random generation uses it too: rivers run downhill, mountains follow ridges.

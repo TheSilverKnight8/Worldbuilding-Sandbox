@@ -49,7 +49,7 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Where generation is offered (Stage 6) | At setup only: start from open water or a generated map; generate again as often as wanted before keeping one, then edit by hand. |
 | Generation settings (Stage 6) | All four: amount of land, continents or islands, how mountainous, climate. |
 | Generated terrain icons (Stage 6) | Like icons placed by hand: stored, movable, resizable, deletable, shaping the elevation; nothing redrawn from the elevation. |
-| What generation places (Stage 6) | Besides land, elevation, rivers and biomes: mountains and hills, volcanoes, plateaus and cliffs, and lakes. |
+| What generation places (Stage 6) | Besides land, elevation, rivers and biomes: mountains and hills, volcanoes, plateaus and cliffs, and lakes. `SPEC.md` updated with these Stage 6 answers, at Caleb's request. |
 | Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
 
 ## Platform
