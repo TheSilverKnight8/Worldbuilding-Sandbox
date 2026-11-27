@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import '@fontsource-variable/archivo';
 import '@fontsource-variable/jetbrains-mono';
+import '@fontsource-variable/eb-garamond';
+import '@fontsource/im-fell-english-sc';
 import './index.css';
 import App from './App';
 

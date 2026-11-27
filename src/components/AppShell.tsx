@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router';
-import { AlertTriangle, Check, Globe2, Loader2 } from 'lucide-react';
+import { AlertTriangle, BookOpen, Check, Globe2, Loader2, Map as MapIcon } from 'lucide-react';
 import { AppMark } from '../graphics/AppMark';
 import { CroswellLogo, CroswellMark } from '../graphics/Logo';
 import { APP_NAME } from '../config';
@@ -12,6 +12,9 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
     'flex items-center gap-2 rounded-xl px-3 py-1.5 font-display text-[1.0625rem] uppercase tracking-[0.05em] transition',
     isActive ? 'bg-accent text-on-accent' : 'text-ink hover:bg-raised',
   );
+
+const viewClass = ({ isActive }: { isActive: boolean }) =>
+  cx('flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-sm font-medium transition', isActive ? 'bg-navy text-on-accent shadow-card' : 'text-muted hover:text-ink');
 
 /**
  * The frame around every screen. Home (the world list) is a page: stripes at the top,
@@ -35,10 +38,23 @@ export function AppShell({ children }: { children: ReactNode }) {
             Worlds
           </NavLink>
           {open.kind === 'ready' && (
-            <NavLink to={`/world/${open.world.id}`} className={navClass}>
-              <Globe2 className="size-4" />
-              <span className="max-w-64 truncate">{open.world.name}</span>
-            </NavLink>
+            <>
+              <NavLink to={`/world/${open.world.id}`} className={navClass}>
+                <Globe2 className="size-4" />
+                <span className="max-w-64 truncate">{open.world.name}</span>
+              </NavLink>
+              {/* The world's two views. */}
+              <div className="ml-2 flex rounded-xl border border-line bg-raised p-0.5" aria-label="View">
+                <NavLink to={`/world/${open.world.id}`} end className={viewClass}>
+                  <MapIcon className="size-4" />
+                  Map
+                </NavLink>
+                <NavLink to={`/world/${open.world.id}/entries`} className={viewClass}>
+                  <BookOpen className="size-4" />
+                  Entries
+                </NavLink>
+              </div>
+            </>
           )}
         </nav>
         <div className="flex-1" />

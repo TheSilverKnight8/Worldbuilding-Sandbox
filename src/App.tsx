@@ -32,7 +32,7 @@ export default function App() {
       <AppShell>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/world/:id" element={<WorldPage />} />
+          <Route path="/world/:id/*" element={<WorldPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>

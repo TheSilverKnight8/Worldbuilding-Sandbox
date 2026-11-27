@@ -266,9 +266,11 @@ export function MapCanvas(props: Props) {
 
   // Holding Space pans with the left button.
   useEffect(() => {
-    const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
+    const typing = (e: KeyboardEvent) =>
+      e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || (e.target instanceof HTMLElement && e.target.isContentEditable);
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !typing(e)) {
+      // Not while the map is hidden (the Entries view is shown), nor while typing anywhere.
+      if (e.code === 'Space' && !typing(e) && box.current?.offsetParent) {
         e.preventDefault();
         setSpace(true);
       }

@@ -13,7 +13,8 @@ The build order is in `SPEC.md` ("Build order"), agreed with Caleb: 11 stages, m
 3. Biomes and the painterly look **(done)**.
 4. Elevation and terrain icons **(done)**; the map icons were redrawn during it.
 5. Rivers, lakes and waterfalls **(done)**; cliffs and waterfalls got a drawing for each direction during it.
-6. Random generation **(this stage)**.
+6. Random generation **(done)**.
+7. Entries **(this stage)**.
 
 The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not merged; the polygon map replaces it. The branch is kept for reference.
 
@@ -50,6 +51,15 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Generation settings (Stage 6) | All four: amount of land, continents or islands, how mountainous, climate. |
 | Generated terrain icons (Stage 6) | Like icons placed by hand: stored, movable, resizable, deletable, shaping the elevation; nothing redrawn from the elevation. |
 | What generation places (Stage 6) | Besides land, elevation, rivers and biomes: mountains and hills, volcanoes, plateaus and cliffs, and lakes. `SPEC.md` updated with these Stage 6 answers, at Caleb's request. |
+| Entry types now (Stage 7) | Settlement, nation, culture, language, faction, feature, landmark, road, info node, group and biome now; timeline events with Stage 10, diplomacy strands with Stage 9, placing entries on the map with Stage 8. |
+| Reaching entries (Stage 7) | A world has two views, switched in the header: Map and Entries. |
+| Free write (Stage 7) | Simple formatting: headings, bold, italic, lists and quotes. |
+| Links (Stage 7) | In the text (type [[ and pick an entry), plus a list on each entry of what links to it. |
+| Technology level (Stage 7) | Named eras, in order, so it can be filtered as a range. |
+| Kinds and types (Stage 7) | A starter list you can add to: a value typed in is offered afterwards in that world. |
+| Dates (Stage 7) | The real-world calendar to the day; years before 1 allowed (BC). |
+| Images (Stage 7) | A gallery with a cover. |
+| Rivers along polygon borders (asked during Stage 7) | All rivers follow polygon borders, with the coastline wiggle, as in Nortantis: routed and generated ones, and drawn ones snapped to the nearest borders. Rivers already saved move onto borders when a world opens. To do after Stage 7. |
 | Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
 
 ## Platform
@@ -368,6 +378,74 @@ The generator is the app's own code (`src/lib/map/generate.ts`), using general t
 ### Speed
 
 In the test browser: about 0.1 to 0.2 s to generate a map; the first one at a size also makes the polygons (about 0.6 s).
+
+## Entries (Stage 7)
+
+### Views
+
+| Item | Choice |
+| --- | --- |
+| Map and Entries | Two views of a world, switched in the header (Caleb), each with its own address (`/world/<id>` and `/world/<id>/entries/<entry>`), so Back and Forward work and reloading stays put. While the entries are shown the map stays as it was (its view, tool and undo history), with its keyboard shortcuts off. |
+| The list | On the left: search, the type to show, filters for that type, and **New entry** (a menu of the 11 types; a new entry is named "New settlement" and so on, ready to rename). Each row shows the cover (or the type's letter), the name, the type and a little of the free write. |
+| Search | Every word typed must appear in the entry's name, type, field values (names of the entries its fields point at included) or free write. Exact name matches come first, then names starting with the words, then names containing them, then the rest, each by name. |
+| Filters | For the type shown, a filter per field: a range for numbers, sizes, technology level and dates (by year, BC included); a choice for the rest (an entry, a kind; "Independent" for a settlement with no nation). |
+| The entries' code | Loaded the first time Entries is opened (its own file, about 150 KB compressed, mostly the editor), so the map opens as quickly as before. |
+
+### The page
+
+| Item | Choice |
+| --- | --- |
+| Look | Follows the world's look toggle, shared with the map and remembered per world (switching on either changes both). **Atlas**: a printed page on the map's own parchment (made in code), in ink, set in IM Fell English SC (titles, labels) and EB Garamond (text), with double rules and an ink frame around the fields and the cover. **Painterly**: a bright page with a wash of the type's color across its head (a biome's own color for a biome), rounded white panels, in the app's sans-serif. Both fonts are under the SIL Open Font License, bundled with the app (fontsource 5.3.0), so they work offline. |
+| Editing | The page is the editor: the name (the title), every field and the free write change in place and save themselves. |
+| Shown, not stored | A nation's settlements (those whose nation is it) and their total population; how many nations a faction is in. A settlement's biome and elevation come with Stage 8 (places on the map), a nation's territory and relations with Stage 9. |
+| Linked from | Every entry lists the entries that point at it, and how: "mentioned in its text", or the field (nation, members, settlements it connects…). |
+
+### Fields
+
+| Type | Fields |
+| --- | --- |
+| Settlement | Nation (or Independent), dominant culture, demographics (each culture's share in percent, with the total shown), population, technology level, founded |
+| Nation | Dominant culture, government type, capital, founded |
+| Culture | Language (exactly one) |
+| Language | Common letters or sounds, ones to avoid, typical syllable patterns, stress or emphasis, example names (text, for name checking in Stage 11) |
+| Faction or people group | Type, membership, nations it is in |
+| Geographical feature | Kind, size (km² or km) |
+| Landmark | Kind |
+| Road | Settlements it connects |
+| Info node | (free write) |
+| Group | Members (any entries) |
+| Biome | Color and icons, the same as in the map's biome panel |
+
+- **Technology level** (Caleb: named eras): Stone age, Bronze age, Iron age, Medieval, Renaissance, Early modern, Industrial, Modern.
+- **Kinds and types** (Caleb: a list you can add to): starter lists for government (monarchy, empire, republic, democracy, oligarchy, theocracy, tribal confederation, city-state, dictatorship), faction (guild, religious order, military order, political faction, secret society, clan, trading company, rebel movement, people group), feature (mountain range, hills, volcano, plateau, valley, canyon, river, lake, sea, bay, strait, island, archipelago, peninsula, cape, forest, jungle, desert, swamp, plain, glacier) and landmark (castle, fortress, temple, shrine, ruin, monument, tower, bridge, mine, port, lighthouse, battlefield, tomb, wonder). Anything typed instead is offered afterwards in that world.
+- **Dates** (Caleb: before year 1 too): the real-world (Gregorian) calendar; the day and month are optional; years before 1 are BC, with no year 0.
+- Fields point at other entries by ID, so renaming never breaks them.
+
+### Free write
+
+| Item | Choice |
+| --- | --- |
+| Editor | TipTap 3.33.1 (MIT), released two weeks before it was added. Headings (two sizes), bold, italic, bulleted and numbered lists, quotes (Caleb: simple formatting), from a toolbar or the usual shortcuts. It saves itself as it is typed. |
+| Links | Type [[ (or use the toolbar's link button) and pick an entry by name. A link stores the entry's ID and always shows its current name; clicking it opens the entry. A link to a deleted entry reads "Deleted entry". |
+| Stored | As HTML in the record's free write, and the IDs it links to in the record's links. Only the editor's own kinds of text are kept when it is read back, so anything else in a stored text (from an imported file, say: scripts, images, frames) is dropped and never runs. |
+
+### Images
+
+- A gallery on each entry; its first image is the cover (Caleb), shown at the top of the page and in the list. **Make this the cover** moves another first; **Remove** deletes it from the world.
+- Stored with the world, apart from the record, and exported with it. An image over 2 MB, or wider or taller than 2,400 pixels, is scaled down to 2,400 pixels on its long side and stored as WebP (high quality); smaller ones are kept as they are. A file that is not an image is refused with a reason.
+- Clicking an image shows it large.
+
+### Deleting
+
+Asks first. Other entries' fields stop pointing at the deleted entry; links to it in their text read "Deleted entry". Its images are deleted. Deleting a biome also takes it off the map, as in the biome panel.
+
+### Format
+
+No change (still 6): records already held fields, free write, images and links. A settlement's demographics are stored as { culture ID: percent }.
+
+### Also fixed
+
+- The map's Space-to-pan and its other shortcuts ignored only ordinary text boxes, so a space typed in the free write was swallowed. They now ignore any place where text is being typed, and Space-to-pan is off while the map is hidden.
 
 ## Data structure (agreed with Caleb)
 

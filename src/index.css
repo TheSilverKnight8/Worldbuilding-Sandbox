@@ -15,6 +15,9 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
   /* Norwester by Jamie Wilson, SIL Open Font License (src/assets/fonts). */
   --font-display: 'Norwester', 'Archivo Variable', ui-sans-serif, sans-serif;
+  /* Entry pages in the atlas look: IM Fell English SC and EB Garamond, SIL Open Font License (fontsource). */
+  --font-fell: 'IM Fell English SC', 'EB Garamond Variable', Georgia, serif;
+  --font-garamond: 'EB Garamond Variable', Georgia, 'Times New Roman', serif;
 
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -224,6 +227,371 @@
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--grid-strong) transparent;
+  }
+}
+
+/* ---------------------------------------------------------------- entry pages (Stage 7)
+   One page, two looks (SPEC.md: entry pages follow the style toggle). The atlas page is a
+   printed page on the map's parchment, in ink, set in IM Fell English SC and EB Garamond; the
+   painterly page is bright, with a wash of the entry's color (--wash) across its head. */
+@layer components {
+  .entry-page {
+    min-height: 100%;
+  }
+  .entry-head,
+  .entry-body {
+    max-width: 54rem;
+    margin-inline: auto;
+    padding-inline: 3rem;
+  }
+  .entry-head {
+    padding-top: 2.5rem;
+  }
+  .entry-body {
+    padding-bottom: 5rem;
+  }
+  .entry-cover {
+    display: block;
+    width: 100%;
+    max-height: 22rem;
+    object-fit: cover;
+    margin-bottom: 1.5rem;
+  }
+  .entry-title {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    outline: none;
+    padding: 0;
+  }
+  .entry-facts {
+    display: grid;
+    grid-template-columns: minmax(9rem, 13rem) 1fr;
+    gap: 0.7rem 1.25rem;
+    align-items: baseline;
+  }
+  .entry-field {
+    display: contents;
+  }
+  .entry-value {
+    min-width: 0;
+  }
+  .entry-section {
+    margin-top: 2.25rem;
+  }
+  .entry-h {
+    margin-bottom: 0.75rem;
+  }
+  .entry-muted {
+    opacity: 0.68;
+    font-size: 0.92em;
+  }
+  .entry-warn {
+    color: var(--brand-red);
+    opacity: 1;
+  }
+  .entry-input {
+    font: inherit;
+    font-size: 0.95em;
+    color: inherit;
+    max-width: 100%;
+  }
+  .entry-input:disabled {
+    opacity: 0.5;
+  }
+  .entry-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .entry-chip button {
+    opacity: 0.6;
+  }
+  .entry-chip button:hover {
+    opacity: 1;
+  }
+  .entry-open {
+    display: inline-flex;
+    opacity: 0.6;
+  }
+  .entry-open:hover {
+    opacity: 1;
+  }
+  .entry-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9em;
+    padding: 0.35rem 0.8rem;
+  }
+  .entry-thumb {
+    margin: 0;
+    overflow: hidden;
+  }
+  .entry-cover-tag {
+    position: absolute;
+    left: 0.4rem;
+    top: 0.4rem;
+    font: 600 0.65rem/1 var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.3rem;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+  }
+  .entry-thumb-button {
+    display: flex;
+    padding: 0.3rem;
+    border-radius: 0.4rem;
+    background: rgba(255, 255, 255, 0.92);
+    color: #222;
+  }
+  .entry-swatch {
+    width: 3rem;
+    height: 1.8rem;
+    padding: 0;
+    border: 1px solid currentColor;
+    background: transparent;
+  }
+  .entry-backlinks li + li {
+    margin-top: 0.3rem;
+  }
+  .entry-prose {
+    outline: none;
+    min-height: 8rem;
+  }
+  .entry-prose > * + * {
+    margin-top: 0.7em;
+  }
+  .entry-prose ul {
+    list-style: disc;
+    padding-left: 1.4em;
+  }
+  .entry-prose ol {
+    list-style: decimal;
+    padding-left: 1.4em;
+  }
+  .entry-prose li > * + * {
+    margin-top: 0.3em;
+  }
+  .entry-prose blockquote {
+    padding-left: 1em;
+    border-left: 3px solid currentColor;
+    opacity: 0.85;
+  }
+  .entry-prose p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    opacity: 0.45;
+  }
+  .entry-link {
+    cursor: pointer;
+  }
+  .entry-link-missing {
+    text-decoration: line-through;
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  /* The atlas page */
+  .look-atlas {
+    --page-ink: #3b2f22;
+    color: var(--page-ink);
+    background-color: #efe6d0;
+    background-blend-mode: multiply;
+    font-family: var(--font-garamond);
+    font-size: 1.125rem;
+    line-height: 1.55;
+  }
+  .look-atlas .entry-kind {
+    font-family: var(--font-fell);
+    font-size: 1.05rem;
+    letter-spacing: 0.14em;
+    color: #6e5b41;
+  }
+  .look-atlas .entry-title {
+    font-family: var(--font-fell);
+    font-size: 3.25rem;
+    line-height: 1.1;
+    color: #2c2217;
+  }
+  .look-atlas .entry-title::placeholder {
+    color: rgba(59, 47, 34, 0.35);
+  }
+  .look-atlas .entry-rule {
+    height: 6px;
+    border-top: 1.5px solid var(--page-ink);
+    border-bottom: 0.75px solid var(--page-ink);
+    margin: 0.7rem 0 2rem;
+  }
+  .look-atlas .entry-cover {
+    border: 3px double var(--page-ink);
+    filter: sepia(0.15);
+  }
+  .look-atlas .entry-facts {
+    border: 3px double rgba(59, 47, 34, 0.65);
+    padding: 1.1rem 1.35rem;
+    background: rgba(255, 251, 238, 0.28);
+  }
+  .look-atlas .entry-label {
+    font-family: var(--font-fell);
+    color: #6e5b41;
+  }
+  .look-atlas .entry-input {
+    background: rgba(255, 251, 238, 0.4);
+    border: 0;
+    border-bottom: 1px dotted rgba(59, 47, 34, 0.55);
+    border-radius: 0;
+    padding: 0.05rem 0.3rem;
+  }
+  .look-atlas .entry-input:focus {
+    outline: 1px solid rgba(59, 47, 34, 0.5);
+  }
+  .look-atlas .entry-h,
+  .look-atlas .entry-prose h2 {
+    font-family: var(--font-fell);
+    font-size: 1.65rem;
+    line-height: 1.2;
+    font-weight: 400;
+  }
+  .look-atlas .entry-h {
+    border-bottom: 1px solid rgba(59, 47, 34, 0.4);
+    padding-bottom: 0.2rem;
+  }
+  .look-atlas .entry-prose h3 {
+    font-family: var(--font-fell);
+    font-size: 1.3rem;
+    font-weight: 400;
+  }
+  .look-atlas .entry-prose blockquote {
+    font-style: italic;
+    border-left-width: 2px;
+  }
+  .look-atlas .entry-link,
+  .look-atlas .entry-backlink,
+  .look-atlas .entry-chip a {
+    color: #7c2f1d;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+  }
+  .look-atlas .entry-chip {
+    border: 1px solid rgba(59, 47, 34, 0.5);
+    padding: 0 0.35rem;
+  }
+  .look-atlas .entry-add {
+    border: 1px solid rgba(59, 47, 34, 0.55);
+    background: rgba(255, 251, 238, 0.45);
+    font-family: var(--font-garamond);
+  }
+  .look-atlas .entry-thumb img {
+    border: 1px solid var(--page-ink);
+  }
+
+  /* The painterly page */
+  .look-painterly {
+    --wash: #5f8f4e;
+    color: #2a2b33;
+    background-color: #fbf6ec;
+    background-image:
+      radial-gradient(ellipse 60% 18rem at 18% 0%, color-mix(in srgb, var(--wash) 55%, transparent), transparent 70%),
+      radial-gradient(ellipse 50% 14rem at 82% 4rem, color-mix(in srgb, var(--wash) 32%, transparent), transparent 70%),
+      linear-gradient(to bottom, color-mix(in srgb, var(--wash) 16%, #fbf6ec), #fbf6ec 24rem);
+    background-repeat: no-repeat;
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+  .look-painterly .entry-kind {
+    display: inline-block;
+    padding: 0.18rem 0.75rem;
+    border-radius: 999px;
+    background: var(--wash);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .look-painterly .entry-title {
+    margin-top: 0.5rem;
+    font-size: 2.9rem;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+  .look-painterly .entry-rule {
+    width: 40%;
+    height: 4px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--wash), transparent);
+    margin: 0.6rem 0 2rem;
+  }
+  .look-painterly .entry-cover {
+    border-radius: 1rem;
+    box-shadow: 0 6px 22px rgba(30, 25, 15, 0.18);
+  }
+  .look-painterly .entry-facts {
+    background: #fff;
+    border-radius: 1rem;
+    padding: 1.1rem 1.35rem;
+    box-shadow: 0 1px 3px rgba(30, 25, 15, 0.1);
+  }
+  .look-painterly .entry-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--wash) 72%, #333);
+  }
+  .look-painterly .entry-input {
+    border: 1px solid #e4dac6;
+    border-radius: 0.5rem;
+    background: #fffdf8;
+    padding: 0.2rem 0.5rem;
+  }
+  .look-painterly .entry-input:focus {
+    outline: 2px solid color-mix(in srgb, var(--wash) 60%, transparent);
+  }
+  .look-painterly .entry-h,
+  .look-painterly .entry-prose h2 {
+    font-size: 1.3rem;
+    font-weight: 750;
+  }
+  .look-painterly .entry-prose h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .look-painterly .entry-prose blockquote {
+    border-left-color: var(--wash);
+  }
+  .look-painterly .entry-link,
+  .look-painterly .entry-backlink {
+    color: color-mix(in srgb, var(--wash) 78%, #111);
+    background: color-mix(in srgb, var(--wash) 13%, transparent);
+    border-radius: 0.3rem;
+    padding: 0 0.2rem;
+    font-weight: 600;
+  }
+  .look-painterly .entry-chip {
+    background: color-mix(in srgb, var(--wash) 14%, #fff);
+    border-radius: 999px;
+    padding: 0.05rem 0.6rem;
+  }
+  .look-painterly .entry-chip a {
+    font-weight: 600;
+  }
+  .look-painterly .entry-add {
+    border-radius: 0.6rem;
+    background: color-mix(in srgb, var(--wash) 14%, #fff);
+    font-weight: 600;
+  }
+  .look-painterly .entry-thumb {
+    border-radius: 0.7rem;
+    box-shadow: 0 1px 3px rgba(30, 25, 15, 0.15);
   }
 }
 

@@ -19,8 +19,9 @@ It is an installable web app (PWA) for Chrome on a computer (Mac or Windows), ho
 | Rivers | **Draw** a river from its source to its mouth, kept exactly as drawn, or **Route downhill**: click where it starts and the app runs it down the heightmap to the sea, a lake, the map's edge or another river. Rivers narrow toward their source and widen where others join them, and are drawn on land only. **Select** a river to set its width at the mouth, make it flow the other way, or delete it. Lakes are water painted inside land. Where a river crosses a cliff, a waterfall appears. Undo and redo. |
 | Icons | Drawn in code in an ink style matched to a Nortantis map of Caleb's: mountains, hills, volcanoes, plateaus and cliffs after the bonus art pack for Nortantis, plants after the FA01-Temperate pack (style references only; no pack art is used). **Place** single icons by hand: mountains, hills, volcanoes, plateaus and cliffs, which shape the ground around them, trees, palms, cacti, shrubs, grass, dunes and reeds, and waterfalls. **Select** any icon, a biome's plants and the waterfalls on rivers included, to move, resize or delete it; one of the app's own then stays as you leave it. Cliffs and waterfalls face any of 8 directions, each drawn as seen from that side (a drop facing away shows only its rim); cliffs can be even, fade out to one side, or be broken. Undo and redo. |
 | Hover | The polygon under the mouse is outlined. |
+| Entries | A world's second view (**Map** / **Entries** in the header): settlements, nations, cultures, languages, factions, features, landmarks, roads, info nodes, groups and biomes, each with its fields (eras, dates to the day, BC included, kinds you can add to), free write with simple formatting, links to other entries (type [[), a list of what links to it, and a gallery of images with a cover. Search names, text and fields; filter by type and by field. Pages follow the atlas or painterly look, the same as the map. |
 
-Coming next (Stage 7): entries.
+Coming next (Stage 8): map items (settlements and other places on the map, labels, roads, decorations).
 
 ### Map controls
 
@@ -66,11 +67,12 @@ Clearing Chrome's site data for the address deletes the worlds stored there. An 
 
 ```
 src/
-  lib/world/     world shape (records, fields, blobs, map), format version, export and import files
+  lib/world/     world shape (records, fields, blobs, map), entry types and fields, format version, export and import files
   lib/map/       polygons, noisy edges, coastlines, biomes, elevation and terrain, rivers, icons, both looks, the painting tools, the map generator
   lib/map/art/   the icons' drawings, in code (terrain, cliffs, plants, waterfalls)
   lib/           browser storage (IndexedDB), app state and autosave
   map/           map setup (open water or generated, with a preview), map editor, map canvas, biome panel, rivers panel, icons panel
+  entries/       the Entries view: list, search and filters, entry pages, free write, field editors, images
   pages/         Home (the world list), World
   components/    app frame, dialogs, shared pieces
   graphics/      app icon, Croswell Industries logo

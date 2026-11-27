@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { MAX_WORLDS } from '../config';
-import { addWorld, deleteWorldData, getBlob, listBlobs, listWorlds, putBlob, readDoc, saveWorld, storageMessage, writeWorld } from './db';
+import { addWorld, deleteBlob, deleteWorldData, getBlob, listBlobs, listWorlds, putBlob, readDoc, saveWorld, storageMessage, writeWorld } from './db';
 import { newId } from './ids';
 import { MAX_BIOMES, biomeRecord, seedBiomes, slotFor } from './map/biomes';
 import { DEFAULT_CELLS, elevationFromBlob, elevationToBlob, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
@@ -8,7 +8,8 @@ import { GEN_BIOMES, type GeneratedMap } from './map/generate';
 import { DEFAULT_LAND_ELEVATION } from './map/terrain';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
-import { metaOf, type BiomeFields, type IconSet, type MapInfo, type PlacedIcon, type River, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
+import { KIND_LABEL, linksIn, withoutRef, type EntryKind } from './world/entries';
+import { metaOf, type BiomeFields, type FieldValue, type IconSet, type MapInfo, type PlacedIcon, type River, type WorldBlob, type WorldDoc, type WorldMeta, type WorldRecord } from './world/types';
 
 export interface SaveStatus {
   state: 'saved' | 'saving' | 'error';
@@ -563,4 +564,174 @@ export function setRivers(rivers: River[]) {
 /** Sets the icons placed by hand, and (if given) the keys of the app's own icons that were taken over. */
 export function setPlacedIcons(icons: PlacedIcon[], hiddenAuto?: string[]) {
   updateWorld((d) => (d.map ? { ...d, map: { ...d.map, icons, hiddenAuto: hiddenAuto ?? d.map.hiddenAuto } } : d));
+}
+
+// ---------------------------------------------------------------- entries (Stage 7)
+
+/** Adds an entry of `kind` and returns its ID. A biome entry is also a biome to paint with (see addBiome). */
+export function addEntry(kind: EntryKind, name?: string): Result<string> {
+  if (kind === 'biome') return addBiome(name ?? 'New biome', '#9fb07c', 'none');
+  const doc = openDoc();
+  if (!doc) return { ok: false, reason: 'No world is open.' };
+  const r: WorldRecord = { id: newId(), kind, name: name ?? `New ${KIND_LABEL[kind].toLowerCase()}`, fields: {} };
+  updateWorld((d) => ({ ...d, records: { ...d.records, [r.id]: r } }));
+  return { ok: true, value: r.id };
+}
+
+export interface EntryPatch {
+  name?: string;
+  /** Fields to set; undefined, null or '' clears one. */
+  fields?: Record<string, FieldValue | undefined>;
+  /** The free write, as simple formatted HTML; its entry links become the record's links. */
+  text?: string;
+}
+
+/** A free write with no words and no links in it counts as not written. */
+const isBlankText = (html: string) => !html.includes('data-entry-link') && !html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+
+export function updateEntry(id: string, patch: EntryPatch) {
+  updateWorld((d) => {
+    const r = d.records[id];
+    if (!r) return d;
+    const next: WorldRecord = { ...r };
+    if (patch.name !== undefined) next.name = patch.name;
+    if (patch.fields) {
+      const fields = { ...r.fields };
+      for (const [k, v] of Object.entries(patch.fields)) {
+        if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) delete fields[k];
+        else fields[k] = v;
+      }
+      next.fields = fields;
+    }
+    if (patch.text !== undefined) {
+      if (isBlankText(patch.text)) {
+        delete next.text;
+        delete next.links;
+      } else {
+        next.text = patch.text;
+        const links = linksIn(patch.text);
+        if (links.length) next.links = links;
+        else delete next.links;
+      }
+    }
+    return { ...d, records: { ...d.records, [id]: next } };
+  });
+}
+
+/**
+ * Deletes an entry and its images. Other entries' fields stop pointing at it; links to it in
+ * free write stay, shown as a deleted entry. Deleting a biome also takes it off the map.
+ */
+export async function deleteEntry(id: string) {
+  const doc = openDoc();
+  const r = doc?.records[id];
+  if (!doc || !r) return;
+  if (r.kind === 'biome') deleteBiome(id);
+  else
+    updateWorld((d) => {
+      const records = { ...d.records };
+      delete records[id];
+      return { ...d, records };
+    });
+  updateWorld((d) => {
+    let records = d.records;
+    for (const o of Object.values(d.records)) {
+      const w = withoutRef(o, id);
+      if (!w) continue;
+      if (records === d.records) records = { ...d.records };
+      records[o.id] = w;
+    }
+    return records === d.records ? d : { ...d, records };
+  });
+  for (const b of r.images ?? []) await deleteBlob(doc.id, b).catch(() => undefined);
+}
+
+/** Images over this size, or wider or taller than this, are scaled down before they are stored. */
+const IMAGE_KEEP_BYTES = 2_000_000;
+const IMAGE_MAX_SIDE = 2400;
+
+/** An image as it will be stored: kept as it is when small, otherwise scaled down to 2,400 pixels on its long side (WebP, high quality). */
+async function prepareImage(file: File): Promise<Blob> {
+  if (!file.type.startsWith('image/')) throw new Error('not an image');
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    // Some images (SVG, for one) cannot be decoded here: kept as they are if small.
+    if (file.size <= IMAGE_KEEP_BYTES) return file;
+    throw new Error('unreadable');
+  }
+  const long = Math.max(bitmap.width, bitmap.height);
+  if (file.size <= IMAGE_KEEP_BYTES && long <= IMAGE_MAX_SIDE) {
+    bitmap.close();
+    return file;
+  }
+  const k = Math.min(1, IMAGE_MAX_SIDE / long);
+  const canvas = new OffscreenCanvas(Math.max(1, Math.round(bitmap.width * k)), Math.max(1, Math.round(bitmap.height * k)));
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.convertToBlob({ type: 'image/webp', quality: 0.9 });
+}
+
+/** Adds images to an entry's gallery (the first image is its cover). Returns how many files could not be used. */
+export async function addEntryImages(id: string, files: File[]): Promise<Result<number>> {
+  const doc = openDoc();
+  if (!doc?.records[id]) return { ok: false, reason: 'The entry was not found.' };
+  const added: string[] = [];
+  let skipped = 0;
+  for (const file of files) {
+    let data: Blob;
+    try {
+      data = await prepareImage(file);
+    } catch {
+      skipped++;
+      continue;
+    }
+    const blobId = newId();
+    try {
+      await putBlob({ worldId: doc.id, id: blobId, type: data.type || file.type, data });
+    } catch (e) {
+      return { ok: false, reason: storageMessage(e) };
+    }
+    added.push(blobId);
+  }
+  if (added.length)
+    updateWorld((d) => {
+      const r = d.records[id];
+      return r ? { ...d, records: { ...d.records, [id]: { ...r, images: [...(r.images ?? []), ...added] } } } : d;
+    });
+  void refreshStorage();
+  return { ok: true, value: skipped };
+}
+
+/** Removes an image from an entry's gallery, and from storage. */
+export async function removeEntryImage(id: string, blobId: string) {
+  const doc = openDoc();
+  if (!doc) return;
+  updateWorld((d) => {
+    const r = d.records[id];
+    if (!r) return d;
+    const images = (r.images ?? []).filter((b) => b !== blobId);
+    const next: WorldRecord = { ...r, images };
+    if (!images.length) delete next.images;
+    return { ...d, records: { ...d.records, [id]: next } };
+  });
+  await deleteBlob(doc.id, blobId).catch(() => undefined);
+  void refreshStorage();
+}
+
+/** Makes an image the entry's cover (the first in its gallery). */
+export function setEntryCover(id: string, blobId: string) {
+  updateWorld((d) => {
+    const r = d.records[id];
+    if (!r?.images?.includes(blobId)) return d;
+    return { ...d, records: { ...d.records, [id]: { ...r, images: [blobId, ...r.images.filter((b) => b !== blobId)] } } };
+  });
+}
+
+/** An image stored with the open world, for showing it (null if it is gone). */
+export async function readImage(blobId: string): Promise<Blob | null> {
+  const doc = openDoc();
+  if (!doc) return null;
+  return (await getBlob(doc.id, blobId))?.data ?? null;
 }

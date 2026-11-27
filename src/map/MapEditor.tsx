@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { Hand, Layers, Maximize, PaintBucket, Paintbrush, Redo2, Undo2 } from 'lucide-react';
 import { Input, Kbd, Segmented, cx } from '../components/ui';
 import { emitMap, getMap, mapEdited, setPlacedIcons, setRivers } from '../lib/store';
-import { mapStyleFor } from '../lib/session';
+import { lookFor, onLookChange, setLook } from '../lib/session';
 import { newId } from '../lib/ids';
 import { biomeFields, slotLooks, type SlotLook } from '../lib/map/biomes';
 import type { Graph } from '../lib/map/graph';
@@ -24,7 +24,8 @@ const km = (n: number) => `${Math.round(n).toLocaleString()} km`;
 const kmShort = (n: number) => (n >= 10 ? `${Math.round(n).toLocaleString()} km` : `${n.toFixed(1)} km`);
 
 /** The map work area: toolbar on top, the map in the middle with a panel beside it, a readout at the bottom. */
-export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo; graph: Graph }) {
+/** The map editor. While `active` is false (the Entries view is shown instead) it stays as it was but takes no keys. */
+export function MapEditor({ world, map, graph, active = true }: { world: WorldDoc; map: MapInfo; graph: Graph; active?: boolean }) {
   const painter = useMemo(() => new MapPainter(getMap, (what) => emitMap(what), mapEdited), []);
   const canUndo = useSyncExternalStore(
     (fn) => painter.subscribe(fn),
@@ -37,12 +38,9 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
   const canvas = useRef<MapCanvasHandle>(null);
   const kmPerUnit = map.widthKm / map.width;
 
-  // The look, remembered per world on this computer.
-  const [style, setStyleState] = useState<MapStyle>(() => (mapStyleFor(world.id).get() === 'painterly' ? 'painterly' : 'atlas'));
-  const setStyle = (s: MapStyle) => {
-    setStyleState(s);
-    mapStyleFor(world.id).set(s);
-  };
+  // The look, shared with the entry pages and remembered per world on this computer.
+  const style: MapStyle = useSyncExternalStore(onLookChange, () => lookFor(world.id));
+  const setStyle = (s: MapStyle) => setLook(world.id, s);
   const [overlay, setOverlay] = useState(false);
 
   // Brush size: a slider from about half a cell to a fifth of the map's short side, on a curve so small sizes get room.
@@ -226,10 +224,12 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
   // Keyboard: B brush, F fill, H hand, X swaps land and water, [ and ] brush size, Ctrl+Z undo,
   // Ctrl+Shift+Z or Ctrl+Y redo; in Icons mode Delete removes the selected icon and Escape lets go of it.
   useEffect(() => {
+    if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       // Keys typed into a field are the field's (sliders, checkboxes and buttons do not take typing).
       if (e.target instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button', 'color'].includes(e.target.type)) return;
       if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
       if (document.querySelector('[role="dialog"]')) return;
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && k === 'z') {
@@ -261,7 +261,7 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [painter, mode, deleteSelected, deleteRiver]);
+  }, [painter, mode, deleteSelected, deleteRiver, active]);
 
   // Fill has nothing to do in Elevation mode.
   useEffect(() => {

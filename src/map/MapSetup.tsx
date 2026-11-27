@@ -7,7 +7,7 @@ import { DEFAULT_CELLS, type Graph } from '../lib/map/graph';
 import { variantsOf } from '../lib/map/icons';
 import type { MapStyle } from '../lib/map/render';
 import { newSeed } from '../lib/rng';
-import { mapStyleFor } from '../lib/session';
+import { setLook } from '../lib/session';
 import { checkMapSize, makeMapGraph, setupMap, useApp, type MapDraft } from '../lib/store';
 import { MapPreview } from './MapPreview';
 
@@ -71,7 +71,7 @@ export function MapSetup() {
   const keep = async () => {
     if (!draft) return;
     setBusy('keep');
-    if (worldId) mapStyleFor(worldId).set(style);
+    if (worldId) setLook(worldId, style);
     const r = await setupMap(draft.widthKm, draft.heightKm, draft);
     setBusy(null);
     if (!r.ok) void alertDialog({ title: 'Could not keep the map', body: r.reason });
