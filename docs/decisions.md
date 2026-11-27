@@ -24,7 +24,8 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Data structure | The shape under "Data structure" below. |
 | Importing a world when all 3 slots are full | Refuse, and ask to delete a world first. |
 | Everything about the version 2 direction | See `docs/concept-rethink.md`. |
-| Atlas sea (Stage 2 checkpoint) | A lighter or darker brown, not blue. (Darker brown chosen.) |
+| Atlas sea (Stage 2 checkpoint) | A lighter or darker brown, not blue. (Darker brown chosen; replaced in Stage 4, below.) |
+| Atlas sea, land and coast (Stage 4) | Match Caleb's own Nortantis map: pale sea, darker olive-tan land, a dark band just inside the coast, no wave rings. |
 | Painterly sea (Stage 3) | Blue. |
 | Starter biomes (Stage 3) | Fewer, simpler: a short list of broad biomes. |
 | Edges between biomes on the painterly map (Stage 3) | Soft, blended. |
@@ -93,7 +94,7 @@ The spec left two things to this stage: the drawing technology and the number of
 | Item | Choice |
 | --- | --- |
 | Noisy edges | Written for this app from Amit Patel's published idea (Red Blob Games): each straight edge between a land cell and a water cell becomes a wiggly line that stays inside the shape made by the edge's ends and the two cell centers (reaching halfway toward each center), so neighboring wiggles never cross. About 8 points per edge. The wiggle is seeded by the map's own seed, so it is the same every time. |
-| Coast tracing | Every land/water edge, chained into loops. Outside the map counts as water, so land touching the map's edge still fills; but there is no ink or waves along the map's border. Lakes are holes in the land. Takes about 6 ms, so it is redone on every brush dab. |
+| Coast tracing | Every land/water edge, chained into loops. Outside the map counts as water, so land touching the map's edge still fills; but there is no ink along the map's border. Lakes are holes in the land. Takes about 6 ms, so it is redone on every brush dab. |
 
 ### Drawing the atlas
 
@@ -102,11 +103,10 @@ The spec left two things to this stage: the drawing technology and the number of
 | Technology | The browser's 2D canvas. | Inked lines, textures, icons and lettering (later stages) are what it is built for; it draws like a printed map. |
 | Sizes | In map units, so the look scales like a printed map when zooming. Thin lines never get thinner than about one screen pixel. | |
 | Paper | A parchment texture made in code (soft blotches from layered smooth noise, plus grain), repeated seamlessly. | Spec: art drawn in code. |
-| Sea | A darker brown than the land, multiplied over the paper, darker still along the coast (a blurred band about 9 units wide). | Caleb: brown, not blue (after trying a blue-grey at the Stage 2 checkpoint). Easy to make lighter instead. |
-| Waves | 3 rings off the coast, at 2.4, 5.0 and 7.6 units, thin ink at half strength. | Nortantis offers up to 5 rings. |
-| Land | The paper itself, slightly darker just inside the coast. | |
+| Sea | Pale: about #d8c5a6, multiplied over the paper, with a thin soft shadow just off the coast. No wave rings. | Matched to Caleb's own Nortantis map (Stage 4). Before that: a darker brown than the land with 3 wave rings (Caleb: brown, not blue, at the Stage 2 checkpoint). |
+| Land | A darker olive tan (about #b7a97e), multiplied over the paper, darker still in a soft band about 5 units wide just inside the coast. Icons are filled with a tone a little lighter than the land. | Matched to Caleb's map (Stage 4): there the sea is lighter than the land. Measured: land #b6a87d against #b7a97e there, sea #d7c4a5 against #dac7a7. |
 | Ink | The coastline in dark brown ink, 0.75 units wide; a frame around the map. | |
-| Speed | A full drawing took about 125 ms in the test browser, which has no graphics card. While a brush stroke is under way, a quick drawing (paper, sea, land, ink; no shading or waves) takes about 15 ms; the full drawing follows when the stroke ends. While zooming or panning, the last drawing is moved and scaled, and the full drawing follows 0.1 s after it stops. | Smooth on any computer; a computer with a graphics card draws faster. |
+| Speed | A full drawing took about 125 ms in the test browser, which has no graphics card. While a brush stroke is under way, a quick drawing (paper, sea, land, ink; no shading) takes about 15 ms; the full drawing follows when the stroke ends. While zooming or panning, the last drawing is moved and scaled, and the full drawing follows 0.1 s after it stops. | Smooth on any computer; a computer with a graphics card draws faster. |
 
 ### Tools
 
@@ -163,7 +163,7 @@ The spec left two things to this stage: the drawing technology and the number of
 | Sea | Blue (Caleb), lighter along the coast (a soft band about 14 units wide). |
 | Land | Each cell in its biome's color, blended softly into its neighbors (a blur of about 2.4 map units); land with no biome is a pale ochre. Water cells next to land take that land's color in the hidden color picture, so the blending never pulls a pale fringe into the coast. |
 | Paper | The parchment texture shows through the paint (multiplied at 45%), so it reads as paint on paper. |
-| Coastline | A thin dark blue-grey line. No wave rings (those are the atlas's). |
+| Coastline | A thin dark blue-grey line. No wave rings. |
 | Icons | The same icons as the atlas, in color. |
 | Speed | The biome colors are kept in a picture that is repainted only where land or biomes change, so painting stays quick. In the test browser (no graphics card) a full painterly drawing took about 50 ms and an atlas drawing about 120 ms. |
 

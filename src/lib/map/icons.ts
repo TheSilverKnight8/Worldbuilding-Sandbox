@@ -15,7 +15,8 @@ export type IconStyle = 'atlas' | 'painterly';
 export const VARIANTS = 3;
 
 const INK = '#3b2f22';
-const PAPER = '#f3e9d0';
+/** Atlas icons are filled with a tone a little lighter than the land, so they sit on it rather than shine white (as on Caleb's Nortantis map). */
+const PAPER = '#c9bd96';
 
 /** Colors per icon on the painterly map: fill, lighter or second color, outline. */
 const PAINT: Record<IconKind, [string, string, string]> = {

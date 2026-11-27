@@ -5,7 +5,7 @@
 - The ideas are Caleb's; the design and implementation are the builder's. When a question is about *what* the app should do and `SPEC.md` does not answer it, ask Caleb before building it. The builder's choices and Caleb's answers are recorded in `docs/decisions.md`; the reasoning behind the spec is in `docs/concept-rethink.md`.
 - Build in the stages listed in `SPEC.md` ("Build order"), macro to micro. Each stage ends at a test checkpoint: Caleb tries it before the next stage starts.
 - There is no simulation, and none should come back: nothing grows, spreads or changes by itself. Regions are drawn by hand; the diplomacy web changes only by hand.
-- Looks come first. The map has two looks of the same world (`src/lib/map/render.ts`): a fantasy atlas in the style of Nortantis (brown sea, biomes only as ink icons), and a colorful painterly map (blue sea, biome colors blended softly, icons in color). Entry pages follow the same toggle.
+- Looks come first. The map has two looks of the same world (`src/lib/map/render.ts`): a fantasy atlas matched to Caleb's own Nortantis map (pale sea, darker olive-tan land, biomes only as ink icons), and a colorful painterly map (blue sea, biome colors blended softly, icons in color). Entry pages follow the same toggle.
 - Nortantis is AGPL 3.0. Do not copy or port its code or art. Write the app's own versions of the general techniques (Voronoi polygons, Amit Patel's noisy edges), and draw art in code.
 - Icons come before elevation: a terrain icon placed by hand stays where Caleb put it, and the elevation under it reads at least that icon's height (`src/lib/map/terrain.ts`).
 - Elevation is for land only: the coast stays where it was painted. Lowering stops at 0 m; the elevation brush does nothing on water.

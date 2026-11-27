@@ -8,9 +8,9 @@ import { PAPER_TILE_PIXELS, PAPER_TILE_UNITS, paperTexture } from './paper';
 
 // Draws the map with the browser's 2D canvas, in map units, in one of two looks:
 //
-// Fantasy atlas (Stage 2): parchment; a brown sea shaded along the coast with rings of
-//   waves; land darkened just inside the coast; inked coastline; biome icons in ink;
-//   a frame.
+// Fantasy atlas (Stage 2, matched to Caleb's own Nortantis map in Stage 4): parchment;
+//   a pale sea and darker olive-tan land; land darkened in a band just inside the coast,
+//   a thin shadow just off it; an inked coastline; icons in ink; a frame.
 // Painterly (Stage 3): a blue sea, lighter along the coast; land in its biome colors,
 //   blended softly into each other; a soft coastline; biome icons in color; the paper's
 //   texture showing through, like paint on paper; a frame.
@@ -29,21 +29,20 @@ export type MapStyle = IconStyle;
 
 export const ATLAS = {
   ink: '#3b2f22',
-  /** Multiplied over the paper on water: a darker brown than the land (Caleb: brown, not blue). */
-  sea: '#d6c29e',
-  seaShade: 'rgba(96, 70, 40, 0.4)',
-  landShade: 'rgba(110, 82, 48, 0.32)',
-  /** In map units. */
+  /**
+   * Multiplied over the paper. Matched to Caleb's own Nortantis map: the sea pale (about
+   * #d8c5a6 there) and the land a darker olive tan (about #b7a97e).
+   */
+  sea: '#ece6e4',
+  land: '#c8c6ae',
+  /** A thin shadow just off the coast, and a darker band just inside it. In map units. */
+  seaShade: 'rgba(70, 56, 36, 0.3)',
+  seaShadeWidth: 3,
+  seaShadeBlur: 0.8,
+  landShade: 'rgba(78, 62, 36, 0.45)',
+  landShadeWidth: 10,
+  landShadeBlur: 2.2,
   coastInk: 0.75,
-  seaShadeWidth: 9,
-  seaShadeBlur: 3.2,
-  landShadeWidth: 5,
-  landShadeBlur: 1.8,
-  waveCount: 3,
-  waveFirst: 2.4,
-  waveSpacing: 2.6,
-  waveLine: 0.38,
-  waveAlpha: 0.5,
   frame: 1.4,
 };
 
@@ -147,7 +146,7 @@ export class MapRenderer {
   }
 
   /**
-   * Draws the whole visible map. `quick` leaves out the blurred shading, the waves and the
+   * Draws the whole visible map. `quick` leaves out the blurred shading and the
    * soft blending, for drawing while a brush stroke is under way.
    */
   draw(view: View, scene: Scene, style: MapStyle, quick = false) {
@@ -214,7 +213,7 @@ export class MapRenderer {
     ctx.fillStyle = this.paper(ctx);
     ctx.fillRect(0, 0, g.width, g.height);
 
-    // Sea: tint, shade along the coast, waves.
+    // Sea: a pale tint, and a thin shadow just off the coast.
     ctx.save();
     ctx.clip(sea, 'evenodd');
     ctx.globalCompositeOperation = 'multiply';
@@ -229,22 +228,25 @@ export class MapRenderer {
       ctx.lineWidth = ATLAS.seaShadeWidth;
       ctx.stroke(shore);
       ctx.filter = 'none';
-      this.drawWaves(view, dpr, shore);
     }
     ctx.restore();
 
-    // Land: darker just inside the coast.
+    // Land: a darker olive-tan tint, darker still in a band just inside the coast.
+    ctx.save();
+    ctx.clip(land, 'evenodd');
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = ATLAS.land;
+    ctx.fillRect(0, 0, g.width, g.height);
+    ctx.globalCompositeOperation = 'source-over';
     if (!quick) {
-      ctx.save();
-      ctx.clip(land, 'evenodd');
       ctx.lineJoin = 'round';
       ctx.filter = `blur(${ATLAS.landShadeBlur * s}px)`;
       ctx.strokeStyle = ATLAS.landShade;
       ctx.lineWidth = ATLAS.landShadeWidth;
       ctx.stroke(shore);
       ctx.filter = 'none';
-      ctx.restore();
     }
+    ctx.restore();
 
     // Ink.
     ctx.strokeStyle = ATLAS.ink;
@@ -523,40 +525,5 @@ export class MapRenderer {
       main.drawImage(this.layer, 0, 0);
       main.restore();
     }
-  }
-
-  /** Rings of waves at set distances off the coast: each ring is a wide stroke with a slightly narrower one cut out of it. */
-  private drawWaves(view: View, dpr: number, shore: Path2D) {
-    const l = this.lctx;
-    const s = view.scale * dpr;
-    const line = Math.max(ATLAS.waveLine, 0.8 / s);
-    l.setTransform(1, 0, 0, 1, 0, 0);
-    l.clearRect(0, 0, this.layer.width, this.layer.height);
-    l.setTransform(s, 0, 0, s, view.x * dpr, view.y * dpr);
-    l.lineJoin = 'round';
-    l.lineCap = 'round';
-    // Outermost first, so cutting out a ring's inside never removes a ring further out.
-    for (let k = ATLAS.waveCount - 1; k >= 0; k--) {
-      const d = ATLAS.waveFirst + k * ATLAS.waveSpacing;
-      l.globalCompositeOperation = 'source-over';
-      l.strokeStyle = '#000';
-      l.lineWidth = 2 * d + line;
-      l.stroke(shore);
-      l.globalCompositeOperation = 'destination-out';
-      l.lineWidth = 2 * d - line;
-      l.stroke(shore);
-    }
-    l.globalCompositeOperation = 'source-in';
-    l.setTransform(1, 0, 0, 1, 0, 0);
-    l.fillStyle = ATLAS.ink;
-    l.fillRect(0, 0, this.layer.width, this.layer.height);
-    l.globalCompositeOperation = 'source-over';
-
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = ATLAS.waveAlpha;
-    ctx.drawImage(this.layer, 0, 0);
-    ctx.restore();
   }
 }
