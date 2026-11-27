@@ -93,18 +93,28 @@ export interface MapInfo {
   elevationBlob: string;
   /** Icons placed one by one by hand (Stage 4), in the order they were placed. */
   icons: PlacedIcon[];
+  /**
+   * Icons the app draws by itself (hills and mountains on high ground, a biome's plants) that
+   * Caleb took over by selecting them: they are drawn from `icons` now, so the app's own copy
+   * is left out. Keys are made in lib/map/terrain.ts and lib/map/icons.ts.
+   */
+  hiddenAuto: string[];
 }
 
 /** How a biome shows on the fantasy atlas (Stage 3): a set of icons drawn in code, or nothing. */
 export type IconSet = 'deciduous' | 'pine' | 'jungle' | 'cactus' | 'shrub' | 'grass' | 'dunes' | 'reeds' | 'none';
 
-/** Elevation-based geography (Stage 4): the starter set of terrain icons. */
-export type TerrainKind = 'hill' | 'mountain' | 'volcano' | 'plateau' | 'valley' | 'canyon' | 'cliff' | 'pass';
+/** Elevation-based geography (Stage 4): the terrain icons. (Valleys, canyons and passes were dropped at Caleb's request.) */
+export type TerrainKind = 'hill' | 'mountain' | 'volcano' | 'plateau' | 'cliff';
+
+/** A cliff's shape along its length, chosen when it is placed. */
+export type CliffShape = 'even' | 'taper-left' | 'taper-right' | 'broken';
+export const CLIFF_SHAPES: readonly CliffShape[] = ['even', 'taper-left', 'taper-right', 'broken'];
 
 /** Anything that can be placed as a single icon: terrain, or a biome's plants and ground. */
 export type IconKind = TerrainKind | Exclude<IconSet, 'none'>;
 
-export const TERRAIN_KINDS: readonly TerrainKind[] = ['hill', 'mountain', 'volcano', 'plateau', 'valley', 'canyon', 'cliff', 'pass'];
+export const TERRAIN_KINDS: readonly TerrainKind[] = ['mountain', 'hill', 'volcano', 'plateau', 'cliff'];
 export const ICON_KINDS: readonly IconKind[] = [...TERRAIN_KINDS, 'deciduous', 'pine', 'jungle', 'cactus', 'shrub', 'grass', 'dunes', 'reeds'];
 
 /**
@@ -117,11 +127,15 @@ export interface PlacedIcon {
   /** Ground point, in map units. */
   x: number;
   y: number;
-  /** Size in map units (height of the icon; length for rotatable ones). */
+  /** Width in map units. */
   size: number;
-  /** Direction in degrees, for cliffs, canyons and valleys. */
+  /** Which of the kind's drawings. */
+  variant?: number;
+  /** Cliffs: the compass direction the drop faces, in degrees (0 north, 90 east, 180 south, toward the viewer). */
   angle?: number;
-  /** Meters: the top of a hill, mountain, volcano or plateau; how deep a valley, canyon, pass or cliff drop goes. */
+  /** Cliffs: the shape along its length. */
+  shape?: CliffShape;
+  /** Meters: the top of a hill, mountain, volcano or plateau; how far a cliff drops. */
   meters?: number;
 }
 

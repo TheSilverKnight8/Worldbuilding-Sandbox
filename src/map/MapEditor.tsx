@@ -8,11 +8,12 @@ import { biomeFields, slotLooks, type SlotLook } from '../lib/map/biomes';
 import type { Graph } from '../lib/map/graph';
 import { MapPainter, type Brush, type ElevationOp, type PaintMode } from '../lib/map/paint';
 import { OVERLAY, type MapStyle } from '../lib/map/render';
+import { variantsOf, type Placement } from '../lib/map/icons';
 import { ELEVATION_MAX, KINDS } from '../lib/map/terrain';
 import type { IconKind, MapInfo, PlacedIcon, WorldDoc } from '../lib/world/types';
 import { BiomePanel } from './BiomePanel';
 import { IconsPanel, type IconSettings } from './IconsPanel';
-import { MapCanvas, type Hover, type MapCanvasHandle, type Tool } from './MapCanvas';
+import { MapCanvas, type Hover, type IconTool, type MapCanvasHandle, type Tool } from './MapCanvas';
 
 type Mode = PaintMode | 'icons';
 
@@ -79,13 +80,15 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
     (k: IconKind): IconSettings => ({
       sizeKm: KINDS[k].size * graph.spacing * kmPerUnit,
       meters: KINDS[k].meters?.value,
-      angle: KINDS[k].rotatable ? 0 : undefined,
+      angle: KINDS[k].rotatable ? 180 : undefined,
+      shape: k === 'cliff' ? 'even' : undefined,
     }),
     [graph.spacing, kmPerUnit],
   );
   const [iconKind, setIconKind] = useState<IconKind>('mountain');
   const [iconSettings, setIconSettings] = useState<IconSettings>(() => defaults('mountain'));
   const [selectedIcon, setSelectedIcon] = useState<string | null>(null);
+  const [iconTool, setIconTool] = useState<IconTool>('place');
   const selected = selectedIcon ? (map.icons.find((i) => i.id === selectedIcon) ?? null) : null;
   useEffect(() => {
     if (selectedIcon && !selected) setSelectedIcon(null);
@@ -94,25 +97,40 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
     if (mode !== 'icons') setSelectedIcon(null);
   }, [mode]);
 
-  /** Changes the placed icons and adds the change to the undo history. */
+  /** Changes the placed icons (and the app's icons taken over, if given) and adds the change to the undo history. */
   const changeIcons = useCallback(
-    (next: PlacedIcon[], key?: string) => {
+    (next: PlacedIcon[], key?: string, nextHidden?: string[]) => {
       const before = map.icons;
-      setPlacedIcons(next);
-      painter.push({ undo: () => setPlacedIcons(before), redo: () => setPlacedIcons(next), key });
+      const hiddenBefore = map.hiddenAuto;
+      const hiddenAfter = nextHidden ?? map.hiddenAuto;
+      setPlacedIcons(next, hiddenAfter);
+      painter.push({ undo: () => setPlacedIcons(before, hiddenBefore), redo: () => setPlacedIcons(next, hiddenAfter), key });
     },
-    [map.icons, painter],
+    [map.icons, map.hiddenAuto, painter],
   );
 
   const placeIcon = useCallback(
     (x: number, y: number) => {
-      const icon: PlacedIcon = { id: newId(), kind: iconKind, x, y, size: Math.max(0.05, iconSettings.sizeKm / kmPerUnit) };
+      const icon: PlacedIcon = { id: newId(), kind: iconKind, x, y, size: Math.max(0.05, iconSettings.sizeKm / kmPerUnit), variant: Math.floor(Math.random() * variantsOf(iconKind)) };
       if (iconSettings.meters !== undefined && KINDS[iconKind].meters) icon.meters = iconSettings.meters;
-      if (KINDS[iconKind].rotatable) icon.angle = iconSettings.angle ?? 0;
+      if (KINDS[iconKind].rotatable) icon.angle = iconSettings.angle ?? 180;
+      if (iconKind === 'cliff') icon.shape = iconSettings.shape ?? 'even';
       changeIcons([...map.icons, icon]);
       setSelectedIcon(icon.id);
     },
     [iconKind, iconSettings, kmPerUnit, map.icons, changeIcons],
+  );
+
+  /** Takes over an icon the app drew by itself: it becomes an icon placed by hand, in the same spot, and the app's copy is left out. */
+  const adoptIcon = useCallback(
+    (p: Placement, meters: number) => {
+      const icon: PlacedIcon = { id: newId(), kind: p.set, x: p.x, y: p.y, size: p.size, variant: p.variant };
+      // A hill or mountain keeps the height of the ground it stood on, so taking it over does not raise the land.
+      if (KINDS[p.set].meters) icon.meters = Math.max(1, Math.round(meters));
+      changeIcons([...map.icons, icon], undefined, p.auto ? [...map.hiddenAuto, p.auto] : undefined);
+      return icon.id;
+    },
+    [map.icons, map.hiddenAuto, changeIcons],
   );
 
   const moveIcon = useCallback((id: string, x: number, y: number) => changeIcons(map.icons.map((i) => (i.id === id ? { ...i, x, y } : i))), [map.icons, changeIcons]);
@@ -123,12 +141,15 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
     setSelectedIcon(null);
   }, [selectedIcon, map.icons, changeIcons]);
 
-  const selectedSettings: IconSettings | null = selected ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle } : null;
+  const selectedSettings: IconSettings | null = selected
+    ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle ?? (KINDS[selected.kind].rotatable ? 180 : undefined), shape: selected.shape }
+    : null;
   const editSelected = (s: IconSettings) => {
     if (!selected) return;
     const next: PlacedIcon = { ...selected, size: Math.max(0.05, s.sizeKm / kmPerUnit) };
     if (KINDS[selected.kind].meters && s.meters !== undefined) next.meters = s.meters;
-    if (KINDS[selected.kind].rotatable) next.angle = s.angle ?? 0;
+    if (KINDS[selected.kind].rotatable) next.angle = s.angle ?? 180;
+    if (selected.kind === 'cliff') next.shape = s.shape ?? 'even';
     changeIcons(
       map.icons.map((i) => (i.id === selected.id ? next : i)),
       `edit ${selected.id}`,
@@ -255,7 +276,18 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
             </>
           )}
           {mode === 'icons' ? (
-            <span className="text-sm text-muted">Click to place; click an icon to select and drag it.</span>
+            <>
+              <Segmented<IconTool>
+                value={iconTool}
+                onChange={setIconTool}
+                size="sm"
+                options={[
+                  { value: 'place', label: 'Place', title: 'Click the map to place an icon; click one you placed to select it' },
+                  { value: 'select', label: 'Select', title: 'Click any icon to select it, the ones the app drew included' },
+                ]}
+              />
+              <span className="text-sm text-muted">{iconTool === 'place' ? 'Click to place; drag an icon you placed to move it.' : 'Click any icon to select, move or resize it.'}</span>
+            </>
           ) : (
             <>
               <div className="flex items-center gap-0.5 rounded-xl border border-line bg-raised p-0.5">
@@ -305,8 +337,10 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
             style={style}
             looks={looks}
             placed={map.icons}
+            hiddenAuto={map.hiddenAuto}
             overlay={overlay}
             iconMode={mode === 'icons'}
+            iconTool={iconTool}
             selectedIcon={selectedIcon}
             brush={brush}
             tool={mode === 'icons' ? 'brush' : tool}
@@ -317,6 +351,7 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
             onPlaceIcon={placeIcon}
             onSelectIcon={setSelectedIcon}
             onMoveIcon={moveIcon}
+            onAdoptIcon={adoptIcon}
           />
           {/* How the map is shown, over its top-right corner. */}
           <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-xl border border-line bg-surface/95 p-1 shadow-card">

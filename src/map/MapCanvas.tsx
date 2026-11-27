@@ -5,14 +5,16 @@ import type { SlotLook } from '../lib/map/biomes';
 import { cellOutline } from '../lib/map/cells';
 import { buildCoast, type Coast } from '../lib/map/coast';
 import { cellAt, type Graph } from '../lib/map/graph';
-import { ROTATABLE, placeIcons, type Placement } from '../lib/map/icons';
+import { iconBox, iconHit, minPixels, onSpritesReady, placeIcons, placementLook, variantsOf, type Placement } from '../lib/map/icons';
 import { NoisyEdges } from '../lib/map/noisy';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
-import { autoTerrain, computeHeights, isCut } from '../lib/map/terrain';
+import { autoTerrain, computeHeights } from '../lib/map/terrain';
 import type { PlacedIcon } from '../lib/world/types';
 
 export type Tool = 'brush' | 'fill' | 'hand';
+/** In Icons mode: place new icons, or select any icon (the app's own ones included). */
+export type IconTool = 'place' | 'select';
 
 /** What is under the cursor: map position (map units), the cell, and what is there. */
 export interface Hover {
@@ -37,9 +39,12 @@ interface Props {
   style: MapStyle;
   looks: (SlotLook | null)[];
   placed: PlacedIcon[];
+  /** Keys of the app's own icons that were taken over (MapInfo.hiddenAuto). */
+  hiddenAuto: string[];
   overlay: boolean;
   /** Icons mode: clicks place and select icons instead of painting. */
   iconMode: boolean;
+  iconTool: IconTool;
   selectedIcon: string | null;
   brush: Brush;
   tool: Tool;
@@ -50,25 +55,28 @@ interface Props {
   onPlaceIcon: (x: number, y: number) => void;
   onSelectIcon: (id: string | null) => void;
   onMoveIcon: (id: string, x: number, y: number) => void;
+  /** Takes over an icon the app drew by itself (it becomes a placed icon); returns the new icon's ID. `meters` is the ground's height under it. */
+  onAdoptIcon: (p: Placement, meters: number) => string;
 }
 
 const MAX_SCALE = 60;
 /** After zooming or panning stops for this long, the map is drawn again at full quality. */
 const SETTLE_MS = 110;
 
-/** Which placed icon is under a map point (the one drawn on top), or null. */
-function iconAt(icons: PlacedIcon[], x: number, y: number) {
-  let best: PlacedIcon | null = null;
-  for (const i of icons) {
-    const hit = ROTATABLE.has(i.kind) ? Math.hypot(x - i.x, y - i.y) <= i.size * 0.55 : Math.abs(x - i.x) <= i.size * 0.5 && y <= i.y + i.size * 0.1 && y >= i.y - i.size;
-    if (hit && (!best || i.y >= best.y)) best = i;
+/** An icon placed by hand, as the map draws it. */
+export function placedToPlacement(p: PlacedIcon): Placement {
+  let variant = p.variant;
+  if (variant === undefined) {
+    let h = 0;
+    for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) | 0;
+    variant = Math.abs(h);
   }
-  return best;
+  return { x: p.x, y: p.y, size: p.size, set: p.kind, variant: variant % variantsOf(p.kind), angle: p.angle, shape: p.shape, placed: p.id };
 }
 
 /** The map on screen, in the atlas or painterly look. */
 export function MapCanvas(props: Props) {
-  const { handle, graph, seed, style, looks, placed, overlay, iconMode, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
+  const { handle, graph, seed, style, looks, placed, hiddenAuto, overlay, iconMode, iconTool, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<MapRenderer | null>(null);
@@ -98,8 +106,9 @@ export function MapCanvas(props: Props) {
   const icons = useRef<Placement[]>([]);
   const iconsStale = useRef(true);
   const shownIcons = useMemo(() => (moving ? placed.map((i) => (i.id === moving.id ? { ...i, x: moving.x, y: moving.y } : i)) : placed), [placed, moving]);
-  const live = useRef({ style, looks, placed: shownIcons, overlay });
-  live.current = { style, looks, placed: shownIcons, overlay };
+  const hidden = useMemo(() => new Set(hiddenAuto), [hiddenAuto]);
+  const live = useRef({ style, looks, placed: shownIcons, overlay, hidden });
+  live.current = { style, looks, placed: shownIcons, overlay, hidden };
 
   const draw = useCallback(() => {
     const r = renderer.current;
@@ -115,13 +124,12 @@ export function MapCanvas(props: Props) {
       heightsStale.current = false;
     }
     if (iconsStale.current) {
-      const auto = autoTerrain(map.graph, map.land, heights.current, l.placed, seed);
-      const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, auto.noPlants);
-      for (const a of auto.icons) all.push({ x: a.x, y: a.y, size: a.size, set: a.kind, variant: a.variant });
-      for (const p of l.placed) all.push({ x: p.x, y: p.y, size: p.size, set: p.kind, variant: Math.abs(p.id.charCodeAt(0)) % 3, angle: p.angle, placed: p.id });
-      // Front to back by ground point; passes, valleys, canyons and cliffs placed by hand go over everything, as marks cut into the land.
-      const over = (p: Placement) => (p.placed && isCut(p.set) ? 1 : 0);
-      all.sort((a, b) => over(a) - over(b) || a.y - b.y);
+      const auto = autoTerrain(map.graph, map.land, heights.current, l.placed, seed, variantsOf, l.hidden);
+      const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, auto.noPlants, l.hidden);
+      for (const a of auto.icons) all.push({ x: a.x, y: a.y, size: a.size, set: a.kind, variant: a.variant, auto: a.key });
+      for (const p of l.placed) all.push(placedToPlacement(p));
+      // Back to front by ground point.
+      all.sort((a, b) => a.y - b.y);
       icons.current = all;
       iconsStale.current = false;
     }
@@ -187,12 +195,18 @@ export function MapCanvas(props: Props) {
     drawSoon();
   }, [looks, drawSoon]);
 
-  // Icons placed by hand changed (or one is being dragged).
+  // Icons placed by hand changed (or one is being dragged), or one of the app's own was taken over.
   useEffect(() => {
     heightsStale.current = true;
     iconsStale.current = true;
     drawSoon();
-  }, [shownIcons, drawSoon]);
+  }, [shownIcons, hidden, drawSoon]);
+
+  // Icon drawings made in the background are ready: draw again.
+  useEffect(() => {
+    onSpritesReady(() => drawSoon());
+    return () => onSpritesReady(null);
+  }, [drawSoon]);
 
   useEffect(() => drawSoon(), [style, overlay, drawSoon]);
   useEffect(() => drawSettled(), [view, drawSettled]);
@@ -291,12 +305,25 @@ export function MapCanvas(props: Props) {
       return;
     }
     if (iconMode) {
-      const hit = iconAt(placed, p.x, p.y);
+      // The icon on top under the cursor: in Place, only icons placed by hand; in Select, any icon.
+      let hit: Placement | null = null;
+      if (iconTool === 'select') {
+        // Only icons drawn at this zoom: too small to see is too small to pick.
+        const scale = viewRef.current.scale;
+        for (const q of icons.current) if (q.size * scale >= minPixels(q.set) && iconHit(q, p.x, p.y)) hit = q;
+      } else for (const q of placed.map(placedToPlacement).sort((a, b) => a.y - b.y)) if (iconHit(q, p.x, p.y)) hit = q;
       if (hit) {
-        props.onSelectIcon(hit.id);
+        let id = hit.placed;
+        if (!id) {
+          const map = getMap();
+          const cell = map ? cellAt(map.graph, hit.x, hit.y - hit.size * 0.22) : -1;
+          id = props.onAdoptIcon(hit, cell >= 0 ? (heights.current?.[cell] ?? 0) : 0);
+        }
+        props.onSelectIcon(id);
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
-        drag.current = { kind: 'icon', x: e.clientX, y: e.clientY, vx: 0, vy: 0, id: hit.id, ox: hit.x - p.x, oy: hit.y - p.y };
-      } else if (p.x >= 0 && p.y >= 0 && p.x <= graph.width && p.y <= graph.height) props.onPlaceIcon(p.x, p.y);
+        drag.current = { kind: 'icon', x: e.clientX, y: e.clientY, vx: 0, vy: 0, id, ox: hit.x - p.x, oy: hit.y - p.y };
+      } else if (iconTool === 'select') props.onSelectIcon(null);
+      else if (p.x >= 0 && p.y >= 0 && p.x <= graph.width && p.y <= graph.height) props.onPlaceIcon(p.x, p.y);
       return;
     }
     if (tool === 'fill') {
@@ -358,6 +385,16 @@ export function MapCanvas(props: Props) {
   }, [hoverShape, view]);
 
   const selected = selectedIcon ? shownIcons.find((i) => i.id === selectedIcon) : undefined;
+  // A dashed box around the selected icon's drawing, turned with it.
+  const selectedBox = (() => {
+    if (!selected) return null;
+    const q = placedToPlacement(selected);
+    const { turn, look } = placementLook(q);
+    const b = iconBox(q, look.away);
+    const sx = view.x + q.x * view.scale;
+    const sy = view.y + q.y * view.scale;
+    return { left: sx + b.left * view.scale, top: sy + b.top * view.scale, width: b.width * view.scale, height: b.height * view.scale, transform: turn ? `rotate(${turn} ${sx} ${sy})` : undefined };
+  })();
   const panning = tool === 'hand' || space;
   const showBrush = cursor && !panning && !iconMode && tool === 'brush' && !error;
 
@@ -366,7 +403,7 @@ export function MapCanvas(props: Props) {
       ref={box}
       className="relative h-full w-full touch-none overflow-hidden select-none"
       style={{
-        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
+        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : iconTool === 'select' ? 'default' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -382,21 +419,20 @@ export function MapCanvas(props: Props) {
       <canvas ref={canvas} className="pointer-events-none absolute inset-0 h-full w-full origin-top-left" style={{ transform }} />
       <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden>
         {hoverOutline && <polygon points={hoverOutline} fill="none" stroke="#fc3f3f" strokeWidth={1.6} strokeLinejoin="round" data-testid="hover-cell" />}
-        {selected &&
-          (ROTATABLE.has(selected.kind) ? (
-            <circle cx={view.x + selected.x * view.scale} cy={view.y + selected.y * view.scale} r={selected.size * 0.55 * view.scale} fill="none" stroke="#002657" strokeWidth={1.5} strokeDasharray="5 4" />
-          ) : (
-            <rect
-              x={view.x + (selected.x - selected.size * 0.5) * view.scale}
-              y={view.y + (selected.y - selected.size) * view.scale}
-              width={selected.size * view.scale}
-              height={selected.size * 1.1 * view.scale}
-              fill="none"
-              stroke="#002657"
-              strokeWidth={1.5}
-              strokeDasharray="5 4"
-            />
-          ))}
+        {selectedBox && (
+          <rect
+            x={selectedBox.left}
+            y={selectedBox.top}
+            width={selectedBox.width}
+            height={selectedBox.height}
+            transform={selectedBox.transform}
+            fill="none"
+            stroke="#002657"
+            strokeWidth={1.5}
+            strokeDasharray="5 4"
+            data-testid="selected-icon"
+          />
+        )}
       </svg>
       {showBrush && (
         <div

@@ -2,7 +2,7 @@ import { NO_BIOME_COLOR, type SlotLook } from './biomes';
 import { addCell, cellShapes } from './cells';
 import type { Coast } from './coast';
 import type { Graph } from './graph';
-import { ROTATABLE, minPixels, sprite, type IconStyle, type Placement } from './icons';
+import { beginIconFrame, iconSprite, minPixels, placementLook, type IconStyle, type Placement } from './icons';
 import type { NoisyEdges } from './noisy';
 import { PAPER_TILE_PIXELS, PAPER_TILE_UNITS, paperTexture } from './paper';
 
@@ -190,7 +190,7 @@ export class MapRenderer {
       ctx.restore();
     }
 
-    this.drawIcons(view, dpr, scene, style);
+    this.drawIcons(view, dpr, scene, style, quick);
 
     // Frame.
     ctx.setTransform(s, 0, 0, s, view.x * dpr, view.y * dpr);
@@ -483,47 +483,69 @@ export class MapRenderer {
     return this.contours;
   }
 
-  /** Biome icons, stamped in screen pixels so they stay crisp. Icons too small to read at this zoom are left out. */
-  private drawIcons(view: View, dpr: number, scene: Scene, style: MapStyle) {
+  /**
+   * The icons, back to front, stamped in screen pixels from sprites made at the nearest size.
+   * They are drawn on a layer of their own and laid over the map: on the atlas each icon's
+   * mask first erases the icons behind it, so the land shows through its inside. With the
+   * elevation overlay on, the layer goes on half see-through, so the height colors show under
+   * the mountains. Icons too small to read at this zoom are left out.
+   */
+  private drawIcons(view: View, dpr: number, scene: Scene, style: MapStyle, quick: boolean) {
+    // While a brush stroke is under way, icons under 8 pixels wide are left out (they come back when it ends), so painting stays quick.
+    const smallest = quick ? 8 : 0;
     if (!scene.icons.length) return;
-    // With the elevation overlay on, the icons are drawn on a layer and laid over the map
-    // half see-through, so the height colors show under the mountains.
-    const faded = scene.overlay;
-    const ctx = faded ? this.lctx : this.ctx;
-    if (faded) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, this.layer.width, this.layer.height);
-    }
+    beginIconFrame();
+    const ctx = this.lctx;
     const s = view.scale * dpr;
     const cw = this.canvas.width;
     const ch = this.canvas.height;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     const ox = view.x * dpr;
     const oy = view.y * dpr;
     for (const p of scene.icons) {
-      const px = Math.round((p.size * s) / 2) * 2;
-      if (px < minPixels(p.set)) continue;
+      const px = p.size * s;
+      if (px < Math.max(minPixels(p.set), smallest) * dpr) continue;
       const x = ox + p.x * s;
       const y = oy + p.y * s;
-      if (x < -px || y < -px * 0.2 || x > cw + px || y > ch + px * 1.3) continue;
-      const sp = sprite(p.set, p.variant, px, style);
-      if (p.angle && ROTATABLE.has(p.set)) {
+      if (x < -px * 1.3 || y < -px * 1.2 || x > cw + px * 1.3 || y > ch + px * 1.6) continue;
+      const { turn, look } = placementLook(p);
+      const sp = iconSprite(p.set, p.variant, style, px, look);
+      if (!sp) continue;
+      const k = px / sp.w;
+      const w = sp.canvas.width * k;
+      const h = sp.canvas.height * k;
+      if (turn) {
         ctx.save();
         ctx.translate(x, y);
-        ctx.rotate((p.angle * Math.PI) / 180);
-        ctx.drawImage(sp.canvas, -sp.ax, -sp.ay);
+        ctx.rotate((turn * Math.PI) / 180);
+        if (sp.mask && px >= 10) {
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.drawImage(sp.mask, -sp.ax * k, -sp.ay * k, w, h);
+          ctx.globalCompositeOperation = 'source-over';
+        }
+        ctx.drawImage(sp.canvas, -sp.ax * k, -sp.ay * k, w, h);
         ctx.restore();
-      } else ctx.drawImage(sp.canvas, Math.round(x - sp.ax), Math.round(y - sp.ay));
+        continue;
+      }
+      const left = x - sp.ax * k;
+      const top = y - sp.ay * k;
+      if (sp.mask && px >= 10) {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.drawImage(sp.mask, left, top, w, h);
+        ctx.globalCompositeOperation = 'source-over';
+      }
+      ctx.drawImage(sp.canvas, left, top, w, h);
     }
     ctx.restore();
-    if (faded) {
-      const main = this.ctx;
-      main.save();
-      main.setTransform(1, 0, 0, 1, 0, 0);
-      main.globalAlpha = OVERLAY.iconAlpha;
-      main.drawImage(this.layer, 0, 0);
-      main.restore();
-    }
+    const main = this.ctx;
+    main.save();
+    main.setTransform(1, 0, 0, 1, 0, 0);
+    if (scene.overlay) main.globalAlpha = OVERLAY.iconAlpha;
+    main.drawImage(this.layer, 0, 0);
+    main.restore();
   }
 }

@@ -11,7 +11,7 @@ The build order is in `SPEC.md` ("Build order"), agreed with Caleb: 11 stages, m
 1. Foundation **(done)**, then the cleanup of simulation leftovers **(done)**.
 2. Polygon map and the atlas look **(done)**.
 3. Biomes and the painterly look **(done)**.
-4. Elevation and terrain icons **(this stage)**.
+4. Elevation and terrain icons **(this stage)**; the map icons were redrawn during it.
 
 The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not merged; the polygon map replaces it. The branch is kept for reference.
 
@@ -32,8 +32,13 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Placing icons (Stage 4) | Besides brushes, a way to place single icons, trees and other non-mountain icons included. |
 | Hover (Stage 4) | The polygon under the mouse is outlined. |
 | Elevation and the coast (Stage 4) | Elevation is for land only; the coast stays where it was painted. Lowering stops at sea level, and raising the sea does nothing. |
-| Cliffs, canyons and valleys (Stage 4) | Single icons you can rotate. |
+| Cliffs, canyons and valleys (Stage 4) | Single icons you can rotate. (Valleys, passes and canyons were later dropped, below.) |
 | Mountain size (Stage 4) | Close to Nortantis's, which are bigger than the first ones drawn here. |
+| Icon art (Stage 4) | The first code-drawn icons did not look right. Caleb's own Nortantis map is the reference for the whole look. Mountains and hills in the style of the free bonus art pack for Nortantis; every other icon in the style of the FA01-Temperate pack. Icons drawn in code after comparing with AI images (Canva), with heavier shading, slightly thicker lines and rounder peaks; then a little lighter. Caleb will ask for custom icons once the first pass is done. |
+| Terrain icons kept (Stage 4) | Mountains, hills, volcanoes, plateaus and cliffs. Valleys and passes are not needed; canyons dropped for now (cliffs cover a drop). |
+| Cliffs (Stage 4) | One side only: a tall drop. North-facing cliffs show no face. No inked sides, so cliffs placed end to end join. Caleb chooses each cliff's shape (even, fading out to one side, or broken). |
+| Scaling (Stage 4) | Each icon can be sized on its own, the app's own icons included: selecting one takes it over as an icon placed by hand. |
+| Sizes (Stage 4) | Mountains 5.5 cell spacings wide, each sized by its polygon as in Nortantis, varying as much as there. Plants half their first size next to the terrain. |
 
 ## Platform
 
@@ -151,10 +156,10 @@ The spec left two things to this stage: the drawing technology and the number of
 
 | Item | Choice | Why |
 | --- | --- | --- |
-| Drawing | Each icon is drawn in code once at the size it shows on screen, then stamped wherever it goes. Ink on paper for the atlas; colored for the painterly map. | Spec: art drawn in code, as a swappable set. Thousands of trees stay fast. |
-| Placement | A few per land cell, jittered around the cell's center, the same every time (seeded by the map and the cell): 2 per cell for trees, fewer for cacti and dunes. Cells on the coast get one smaller icon at their center (dunes none), so icons stay off the water. Drawn top to bottom, so nearer icons overlap farther ones. | Like Nortantis's forests. |
-| Size | About one cell tall for trees, half for grass, one and a half cells wide for dunes. | |
-| Too small to read | Icons smaller than a few screen pixels are not drawn: trees below 5 px, dunes below 8, grass and reeds below 10. So grassland and swamps show their icons only once zoomed in. | Tiny grass turned into dark specks across the whole land. |
+| Drawing | Drawn in code; redrawn in Stage 4 in the style of the FA01-Temperate pack (see "The icons" under Stage 4). Ink for the atlas; colored for the painterly map. | Spec: art drawn in code, as a swappable set. |
+| Placement | A few per land cell, jittered around the cell's center, the same every time (seeded by the map and the cell): 4 per cell for leafy and pine trees, 3 for palms, 2 for shrubs and reeds, fewer for grass, cacti and dunes (Stage 4, when the plants got smaller). Cells on the coast get one smaller icon at their center (dunes none), so icons stay off the water. Drawn top to bottom, so nearer icons overlap farther ones. | Like Nortantis's forests. |
+| Size | Widths in cell spacings (Stage 4, half their first size next to the terrain): leafy tree 0.55, pine 0.6, palm 0.58, cactus 0.48, shrub 0.37, grass 0.36, reeds 0.43, dunes 1.2. | Caleb: the terrain should be larger next to the plants. |
+| Too small to read | Icons narrower than a few screen pixels are not drawn: trees below 4 px, palms and cacti 5, shrubs 7, grass and reeds 8, dunes 9. While a brush stroke is under way, icons under 8 px are left out until it ends, so painting over a big forest stays quick. | Tiny grass turned into dark specks across the whole land. |
 
 ### The painterly look
 
@@ -186,44 +191,56 @@ The spec left two things to this stage: the drawing technology and the number of
 | Brush | **Set** (an exact height), **Raise** and **Lower** (meters per dab at the brush's center, fading to nothing at its rim), **Smooth** (moves heights toward the average of their neighbors). There is no elevation fill. |
 | Alt+click | In Elevation mode, picks the height under the cursor into Set. |
 
+### The icons (drawn in code, matched to Caleb's map)
+
+| Item | Choice | Why |
+| --- | --- | --- |
+| Style | Mountains, hills, volcanoes, plateaus and cliffs in the style of the bonus art pack for Nortantis: bold, slightly uneven ink outlines open at the bottom, rounded tips, close hatching on the shaded right faces and loose strokes on the lit left faces. Trees, palms, cacti, shrubs, grass, dunes and reeds in the style of the FA01-Temperate pack: bold outlines, flat shading in two tones on the shadow side. | Caleb's picks. The packs were only looked at for style; nothing was copied, traced or shipped. The art is the app's own code (`src/lib/map/art`), so the repository's license is unaffected. |
+| Why code, not images | AI images (Canva, with three bonus-pack mountains as references) came closest to the pack's look, but repeated one shape, came only as small previews here, and each would have needed downloading by hand. | Caleb compared both and chose the code-drawn ones. |
+| Variety | 16 mountain drawings (3 of them spires), 12 hill, 8 volcano, 8 plateau, 8 cliff; 8 to 12 of each plant. Mountains are a main peak with lower peaks behind and smaller ones in front, broad (slopes no steeper than about 50 degrees) and varying in height; hills are knolls, double crests, low ridges or small clusters; plateaus vary in width, tilt and cliff depth, with uneven tops and sometimes a lower tier. | Caleb found the first set too alike. |
+| Volcano | A broad cone with a rough rim notched on one side; the inside of the crater is hatched dark, so it reads as a hollow; smoke rises from inside it. | Caleb: the first crater was not shadowed and looked odd. |
+| Line weight | One line weight across the map: every icon's lines are set from the width it would have as a mountain. Plants' lines shrink with them, so small trees stay delicate. | |
+| See-through | On the atlas an icon hides the icons behind it but lets the land (its texture and coast shading) show through its inside, as on Caleb's map: each drawing has a mask that erases what is behind before it is stamped. On the painterly map terrain is filled with color that fades out toward the ground, so it does not stop at a hard line. | A flat fill made the icons look like cut-outs. |
+| Sharp at every zoom | Each drawing is made at a few widths (8 to 1,024 pixels) and stamped at the nearest, scaled. It is always drawn in the same units and scaled, so a mountain looks the same at every zoom. Drawings needed during a redraw are made at once for up to 40 ms; after that a nearby size stands in and the rest are made in the background, then the map redraws. | Zooming in stays smooth. |
+
 ### Hills and mountains drawn by the app
 
 | Item | Choice |
 | --- | --- |
-| Where | Every land cell whose final height is 500 m or more gets a hill; 1,500 m or more, a mountain. One per cell, jittered a little, the same every time. Plants (biome icons) are not drawn on those cells. |
-| Size | Matched to Nortantis (Caleb asked for this during the stage): a mountain is about 2.75 cell spacings wide, a hill about 1.4. Mountains grow up to a fifth larger toward 5,000 m, so higher ranges read taller. |
-| How the size was matched | From Nortantis's source (`IconDrawer.java`, `ImageCache.java`, `SettingsGenerator.java`): a mountain icon defaults to 20.5 / 11 of the mean cell width, times the default mountain scale for new maps (1.2), so about 2.24 mean cell widths; a hill to 10.5 / 11 × 1.2, about 1.15. Here a cell is about 1.23 spacings wide (measured on a 16,000-cell map). Only these numbers were taken; no code or art. |
-| Outlines | Lines thicken with size, but less than in proportion, so large mountains are not drawn in heavy strokes. |
+| Where | Land whose final height is 500 m or more gets hills; 1,500 m or more, mountains. Plants are not drawn on those cells. |
+| Size | A mountain is 5.5 cell spacings wide (Caleb's pick after comparing 2.75, 4 and 5.5 on the map), so each spans several polygons; a hill about half that. |
+| Size by polygon | As in Nortantis: each is scaled by its polygon's width between its east-most and west-most neighbors over the map's average (read from Nortantis's `IconDrawer.java`). Our polygons are evened out twice where Nortantis's default does it once (`VoronoiGraph.java`: one pass to the average of a cell's corners), so they vary about a fifth less (measured on 3 maps each: spread 0.22 against 0.26). The ratio is stretched by 1.21, which matches Nortantis's spread almost exactly (5% of cells at 0.59, 99% below 1.65, against 0.59 and 1.67 there). Kept within 0.45 to 1.9, which only catches odd cells along the map's border. Only these numbers were taken; no code. |
+| Spacing | Not one per cell (at this size that would be a solid mass): cells are taken in a fixed random order, and a mountain goes in only if it is at least 0.42 of the two widths' average from every mountain already in (so neighbors overlap by about a third); hills 0.6. The same ones are chosen every time. |
+| Height | No longer drawn larger on higher ground (the earlier rule); size comes from the polygon, as in Nortantis, and each drawing has its own height. |
 
 ### Terrain icons placed by hand (icons come before elevation)
 
-| Icon | What it does to the ground around it | Default |
-| --- | --- | --- |
-| Hill | Raises it to at least the hill's top, falling off softly | 700 m |
-| Mountain | Raises it to at least the peak | 2,500 m |
-| Volcano | The same, with smoke (and lava on the painterly map) | 3,000 m |
-| Plateau | Raises a flat top with steep edges | 1,200 m |
-| Valley | Lowers a long, wide trough along its direction | 400 m deep |
-| Canyon | Lowers a long, narrow cut along its direction | 900 m deep |
-| Cliff | Raises the ground on one side of its line by the drop | 300 m drop |
-| Pass | Lowers a small dip: a way through a range | 600 m deep |
+| Icon | What it does to the ground around it | Default | Width |
+| --- | --- | --- | --- |
+| Mountain | Raises it to at least the peak | 2,500 m | 5.5 cell spacings |
+| Hill | Raises it to at least the hill's top, falling off softly | 700 m | 2.8 |
+| Volcano | The same as a mountain | 3,000 m | 5.8 |
+| Plateau | Raises a flat top with steep edges | 1,200 m | 6 |
+| Cliff | Raises the ground on the side away from the drop by the drop, fading out at its ends (and toward one end, for a cliff that fades out) | 300 m drop | 5 |
 
-- The order is: valleys, canyons and passes cut in first, then cliffs, then hills, mountains, volcanoes and plateaus last, as "at least this high". The polygon right under a hill, mountain or volcano placed by hand reads its full height, and the ground falls off softly around it, whatever was painted there.
+- Cliffs step the ground first, then hills, mountains, volcanoes and plateaus raise it, as "at least this high". The polygon right under a hill, mountain or volcano placed by hand reads its full height, and the ground falls off softly around it, whatever was painted there.
 - A terrain icon placed by hand stays where Caleb put it. Painting elevation under it never moves or removes it.
-- The app does not draw its own hills and mountains under a hill, mountain, volcano or plateau placed by hand. A pass clears them in a gap around it; a valley, canyon or cliff clears them along its length. Passes, valleys, canyons and cliffs placed by hand are drawn over everything, as marks cut into the land.
-- Cliffs, canyons and valleys have a direction, 0 to 180° (Caleb: single icons you rotate).
+- Hills, mountains and volcanoes placed by hand take part in the spacing of the app's own: these keep the same distance from them as from each other. None of the app's own are drawn on a plateau placed by hand, or along a cliff.
+- **Cliffs** are one side only (Caleb). Their direction is the compass direction the drop faces, 0 to 359° (180 = south, toward the viewer; new cliffs start there). A drop facing down the map shows a tall hatched rock face with cracks, ledges and loose rock at its foot; facing up the map, only the rim shows, with broken blocks along its lip and no rocks (rocks made it read as facing the viewer). Neither has inked sides: the rim thins out and the face fades at each end, so cliffs placed end to end join into one. Shape (chosen when placing, or later): even, fades out to the left, fades out to the right (as seen with the drop facing you), or broken in two.
 - Plants placed by hand (trees, cacti, shrubs, grass, dunes, reeds) are pictures only: they change neither the biome nor the elevation.
 - Icons can be placed anywhere on the map, water included, but they only shape land.
+- **Dropped:** valleys and passes (Caleb: not needed) and canyons (Caleb: dropped for now; they did not read as precipices, and cliffs cover a drop). `SPEC.md`, which is Caleb's, still lists them in the starter set.
 
 ### Icons mode (placing single icons)
 
 | Item | Choice |
 | --- | --- |
-| Pick | Any terrain icon, or any plant or ground icon (the same pictures as the biome icons), from the panel on the right. The panel shows each one as drawn on the map. |
-| Place | Click the map. The new icon is selected, so it can be adjusted at once. |
-| Settings | Size in km; height, depth or drop in meters (terrain icons); direction (cliffs, canyons, valleys). Set before placing, or edit the selected icon. |
-| Select, move, delete | Click an icon to select it; drag to move it; `Delete` or `Backspace` removes it; `Escape` lets go. Clicking the map takes focus away from the panel's fields (keeping what was typed), so `Delete` then works on the map. |
-| Undo | Placing, moving, editing and deleting share the undo history with painting. Edits to the same icon less than a second apart (dragging the direction slider, typing a number) are one step. |
+| Pick | Any terrain icon, or any plant or ground icon (the same drawings as the biome icons), from the panel on the right. The panel shows each one as drawn on the map. |
+| Place | With **Place**, click the map. The new icon is selected, so it can be adjusted at once. Clicking an icon placed by hand selects it instead. Each new icon gets one of its kind's drawings at random, and keeps it. |
+| Select | With **Select**, click any icon, the app's own hills, mountains and plants included (Caleb: each icon can be sized on its own). One of the app's own icons is taken over: it becomes an icon placed by hand, in the same spot, at the same size, with the same drawing, and the app leaves out its own copy. A hill or mountain taken over keeps the height of the ground it stood on, so taking it over does not raise the land. From then on it stays as Caleb leaves it, even if the ground or biome under it changes. Deleting it leaves the spot empty; undo gives it back to the app. Icons too small to see at the current zoom cannot be picked. |
+| Settings | Width in km; height or drop in meters (terrain icons); for cliffs, which way the drop faces and the shape, with a small preview. Set before placing, or edit the selected icon. |
+| Move, delete | Drag an icon to move it; `Delete` or `Backspace` removes the selected one; `Escape` lets go. Clicking the map takes focus away from the panel's fields (keeping what was typed), so `Delete` then works on the map. |
+| Undo | Placing, taking over, moving, editing and deleting share the undo history with painting. Edits to the same icon less than a second apart (dragging the direction slider, typing a number) are one step. |
 
 ### Hover outline
 
@@ -251,12 +268,12 @@ The spec left the form of the overlay to this stage ("contour lines, shading, or
 
 ### Format
 
-- Format version **5** adds the elevation layer (a blob, two bytes per cell) and the list of placed icons (ID, kind, position, size, and direction and meters where the kind has them).
+- Format version **5** adds the elevation layer (a blob, two bytes per cell), the list of placed icons (ID, kind, position, width, drawing, and a cliff's direction and shape and meters where the kind has them), and the keys of the app's own icons that were taken over. Format 5 had not reached the site when the icons were redone, so it was extended rather than raised.
 - A Stage 3 map (format 4) opens with its land at 100 m and no placed icons. A missing elevation layer is not reported as damage.
 
 ### Speed
 
-In the test browser (no graphics card), a full redraw with the overlay on took about 80 to 110 ms; the height colors, like the painterly colors, are repainted only where heights change.
+In the test browser (no graphics card), on a map whose land is all forest with a long range (about 29,000 trees and 170 mountains): a full redraw took about 150 to 240 ms, rebuilding the icon list included (about 40 to 45 ms); the first drawing after zooming in a long way, while new sizes are made, up to about 390 ms. A brush stroke over that forest ran at about 17 ms a frame typically and 83 ms at worst, against 117 ms at worst with the first icons. Zooming and panning move the last drawing until they stop, so they stay smooth. A computer with a graphics card draws faster. The height colors, like the painterly colors, are repainted only where heights change.
 
 ## Data structure (agreed with Caleb)
 

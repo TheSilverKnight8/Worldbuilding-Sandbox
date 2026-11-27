@@ -1,4 +1,4 @@
-import { ICON_KINDS, RECORD_KINDS, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
+import { CLIFF_SHAPES, ICON_KINDS, RECORD_KINDS, type CliffShape, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
 
 // Every world carries a format version, both in this browser's storage and in an
 // exported file. When the shape of a world changes, FORMAT_VERSION goes up and
@@ -44,12 +44,13 @@ function upgrade(raw: Record<string, unknown>, from: number): Record<string, unk
   // 4 -> 5: a map gets a base elevation (no blob yet: land is read as low plains) and no placed icons.
   if (from < 5 && o.map) {
     const m = rec(o.map);
-    o = { ...o, map: { ...m, elevationBlob: `${String(m.landBlob)}-elevation`, icons: [] } };
+    o = { ...o, map: { ...m, elevationBlob: `${String(m.landBlob)}-elevation`, icons: [], hiddenAuto: [] } };
   }
   return o;
 }
 
 const ICON_SET = new Set<string>(ICON_KINDS);
+const SHAPES = new Set<string>(CLIFF_SHAPES);
 
 function readIcons(v: unknown): PlacedIcon[] {
   if (!Array.isArray(v)) return [];
@@ -60,7 +61,9 @@ function readIcons(v: unknown): PlacedIcon[] {
     if (!isStr(r.id) || ids.has(r.id) || !isStr(r.kind) || !ICON_SET.has(r.kind) || !isNum(r.x) || !isNum(r.y) || !isPos(r.size)) continue;
     ids.add(r.id);
     const icon: PlacedIcon = { id: r.id, kind: r.kind as IconKind, x: r.x, y: r.y, size: r.size };
+    if (isNum(r.variant) && r.variant >= 0) icon.variant = Math.floor(r.variant);
     if (isNum(r.angle)) icon.angle = r.angle;
+    if (isStr(r.shape) && SHAPES.has(r.shape)) icon.shape = r.shape as CliffShape;
     if (isNum(r.meters)) icon.meters = r.meters;
     out.push(icon);
   }
@@ -94,6 +97,7 @@ function readMap(v: unknown): MapInfo | null {
     biomesSeeded: m.biomesSeeded !== false,
     elevationBlob: isStr(m.elevationBlob) ? m.elevationBlob : `${m.landBlob}-elevation`,
     icons: readIcons(m.icons),
+    hiddenAuto: Array.isArray(m.hiddenAuto) ? (m.hiddenAuto as unknown[]).filter(isStr).slice(0, 200000) : [],
   };
 }
 

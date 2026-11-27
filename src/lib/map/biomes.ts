@@ -18,7 +18,7 @@ const STARTER: { name: string; color: string; icons: IconSet }[] = [
 export const ICON_SETS: { value: IconSet; label: string }[] = [
   { value: 'deciduous', label: 'Leafy trees' },
   { value: 'pine', label: 'Pine trees' },
-  { value: 'jungle', label: 'Jungle trees' },
+  { value: 'jungle', label: 'Palm trees' },
   { value: 'cactus', label: 'Cacti' },
   { value: 'shrub', label: 'Shrubs' },
   { value: 'grass', label: 'Grass tufts' },

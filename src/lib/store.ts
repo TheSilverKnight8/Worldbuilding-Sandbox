@@ -453,6 +453,7 @@ export async function setupMap(widthKm: number, heightKm: number): Promise<Resul
     biomesSeeded: false,
     elevationBlob: `${landBlob}-elevation`,
     icons: [],
+    hiddenAuto: [],
   };
   try {
     // The polygons are written once, now; land and biomes save with the world from here on.
@@ -526,6 +527,7 @@ export function deleteBiome(id: string) {
 // ---------------------------------------------------------------- icons placed by hand (Stage 4)
 
 /** Replaces the open map's placed icons (placing, moving, editing, deleting all go through here; undo keeps the arrays). */
-export function setPlacedIcons(icons: PlacedIcon[]) {
-  updateWorld((d) => (d.map ? { ...d, map: { ...d.map, icons } } : d));
+/** Sets the icons placed by hand, and (if given) the keys of the app's own icons that were taken over. */
+export function setPlacedIcons(icons: PlacedIcon[], hiddenAuto?: string[]) {
+  updateWorld((d) => (d.map ? { ...d, map: { ...d.map, icons, hiddenAuto: hiddenAuto ?? d.map.hiddenAuto } } : d));
 }

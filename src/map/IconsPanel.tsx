@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
-import { Button, IconButton, Input, cx } from '../components/ui';
-import { ROTATABLE, sprite } from '../lib/map/icons';
+import { Button, IconButton, Input, Select, cx } from '../components/ui';
+import { aspectOf, iconBox, iconSprite, placementLook } from '../lib/map/icons';
 import { KINDS } from '../lib/map/terrain';
-import { ICON_KINDS, TERRAIN_KINDS, type IconKind, type PlacedIcon } from '../lib/world/types';
+import { CLIFF_SHAPES, ICON_KINDS, TERRAIN_KINDS, type CliffShape, type IconKind, type PlacedIcon } from '../lib/world/types';
 
-/** Settings for an icon: size in km, meters (height or depth), direction in degrees. */
+/** Settings for an icon: width in km, meters (height or drop), a cliff's direction (compass degrees its drop faces) and shape. */
 export interface IconSettings {
   sizeKm: number;
   meters?: number;
   angle?: number;
+  shape?: CliffShape;
 }
 
 interface Props {
@@ -27,30 +28,37 @@ interface Props {
 }
 
 const PLANTS = ICON_KINDS.filter((k) => !TERRAIN_KINDS.includes(k as never));
+const SHAPE_LABELS: Record<CliffShape, string> = { even: 'Even', 'taper-left': 'Fades out to the left', 'taper-right': 'Fades out to the right', broken: 'Broken in two' };
+const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
 
 /** A small picture of an icon, drawn with the same code as the map's. */
-function Preview({ kind }: { kind: IconKind }) {
+function Preview({ kind, variant = 0, angle, shape, size = 30 }: { kind: IconKind; variant?: number; angle?: number; shape?: CliffShape; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current!;
     const dpr = window.devicePixelRatio || 1;
-    const size = 30;
     c.width = size * dpr;
     c.height = size * dpr;
     const ctx = c.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size, size);
-    const px = ROTATABLE.has(kind) ? 26 : kind === 'plateau' || kind === 'dunes' ? 26 : 22;
-    const sp = sprite(kind, 0, Math.round(px * dpr), 'atlas');
-    const w = sp.canvas.width / dpr;
-    const h = sp.canvas.height / dpr;
-    const ax = sp.ax / dpr;
-    const ay = sp.ay / dpr;
-    const gx = size / 2;
-    const gy = ROTATABLE.has(kind) ? size / 2 : size - 3;
-    ctx.drawImage(sp.canvas, gx - ax, gy - ay, w, h);
-  }, [kind]);
-  return <canvas ref={ref} className="size-[30px]" aria-hidden />;
+    const aspect = aspectOf(kind);
+    // As wide as fits, keeping the drawing's shape; centered in the box.
+    const w = Math.min(size - 4, (size - 4) / aspect);
+    const h = w * aspect;
+    const { turn, look } = placementLook({ set: kind, angle, shape });
+    const sp = iconSprite(kind, variant, 'atlas', Math.round(w * dpr), look, true);
+    if (!sp) return;
+    const k = w / sp.w;
+    const b = iconBox({ set: kind, size: w }, look.away);
+    ctx.save();
+    // The ground point, so that the drawing's box sits in the middle (a cliff turns around it).
+    ctx.translate(size / 2, kind === 'cliff' ? size / 2 : (size - h) / 2 - b.top);
+    if (turn) ctx.rotate((turn * Math.PI) / 180);
+    ctx.drawImage(sp.canvas, -sp.ax * k, -sp.ay * k, sp.canvas.width * k, sp.canvas.height * k);
+    ctx.restore();
+  }, [kind, variant, angle, shape, size]);
+  return <canvas ref={ref} style={{ width: size, height: size }} aria-hidden />;
 }
 
 function KindButton({ kind, active, onClick }: { kind: IconKind; active: boolean; onClick: () => void }) {
@@ -108,29 +116,46 @@ function NumberField({ label, unit, value, min, max, step, onChange }: { label: 
 
 function Settings({ kind, settings, onChange }: { kind: IconKind; settings: IconSettings; onChange: (s: IconSettings) => void }) {
   const info = KINDS[kind];
+  const angle = Math.round(settings.angle ?? 180) % 360;
   return (
     <div className="space-y-3">
-      <NumberField label="Size" unit="km" value={Math.round(settings.sizeKm * 10) / 10} min={0.1} max={5000} step={1} onChange={(v) => onChange({ ...settings, sizeKm: v })} />
-      {info.meters && (
-        <NumberField label={`${info.meters.label}`} unit="m" value={settings.meters ?? info.meters.value} min={0} max={9000} step={50} onChange={(v) => onChange({ ...settings, meters: v })} />
-      )}
+      <NumberField label="Width" unit="km" value={Math.round(settings.sizeKm * 10) / 10} min={0.1} max={5000} step={1} onChange={(v) => onChange({ ...settings, sizeKm: v })} />
+      {info.meters && <NumberField label={info.meters.label} unit="m" value={settings.meters ?? info.meters.value} min={0} max={9000} step={50} onChange={(v) => onChange({ ...settings, meters: v })} />}
       {info.rotatable && (
-        <label className="block space-y-1">
-          <span className="block text-sm">Direction</span>
-          <span className="flex items-center gap-2">
-            <input
-              type="range"
-              className="slider flex-1"
-              min={0}
-              max={180}
-              value={Math.round(settings.angle ?? 0)}
-              aria-label="Direction"
-              style={{ ['--fill' as string]: `${((settings.angle ?? 0) / 180) * 100}%` }}
-              onChange={(e) => onChange({ ...settings, angle: Number(e.target.value) })}
-            />
-            <span className="w-10 text-right font-mono text-xs">{Math.round(settings.angle ?? 0)}°</span>
-          </span>
-        </label>
+        <>
+          <label className="block space-y-1">
+            <span className="block text-sm">Drop faces</span>
+            <span className="flex items-center gap-2">
+              <input
+                type="range"
+                className="slider flex-1"
+                min={0}
+                max={359}
+                value={angle}
+                aria-label="Drop faces"
+                style={{ ['--fill' as string]: `${(angle / 359) * 100}%` }}
+                onChange={(e) => onChange({ ...settings, angle: Number(e.target.value) })}
+              />
+              <span className="w-24 text-right font-mono text-xs">
+                {angle}° {COMPASS[Math.round(angle / 45) % 8]}
+              </span>
+            </span>
+          </label>
+          <label className="block space-y-1">
+            <span className="block text-sm">Shape</span>
+            <Select value={settings.shape ?? 'even'} aria-label="Shape" className="h-9 w-full text-sm" onChange={(e) => onChange({ ...settings, shape: e.target.value as CliffShape })}>
+              {CLIFF_SHAPES.map((s) => (
+                <option key={s} value={s}>
+                  {SHAPE_LABELS[s]}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <Preview kind="cliff" angle={angle} shape={settings.shape} size={56} />
+            <span>Left and right are as seen with the drop facing you. A drop facing away shows only the rim.</span>
+          </div>
+        </>
       )}
     </div>
   );
@@ -174,7 +199,7 @@ export function IconsPanel({ kind, onKind, settings, onSettings, selected, selec
         <h2 className="label-caps mb-3 text-muted">New {KINDS[kind].label.toLowerCase()}</h2>
         <Settings kind={kind} settings={settings} onChange={onSettings} />
         <p className="mt-3 text-xs text-muted">
-          Click the map to place one. Click an icon to select it; drag to move it; <kbd className="font-mono">Delete</kbd> removes it.
+          With Place, click the map to place one. With Select, click any icon, the app&apos;s own hills, mountains and plants included, to move, resize or delete it; it then stays as you leave it.
           {KINDS[kind].group === 'terrain' && ' Terrain icons shape the ground around them, and stay where you put them.'}
         </p>
       </section>
