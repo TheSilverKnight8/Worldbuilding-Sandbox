@@ -9,7 +9,7 @@ import { iconBox, iconHit, minPixels, onSpritesReady, placeIcons, placementLook,
 import { NoisyEdges } from '../lib/map/noisy';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
-import { autoTerrain, computeHeights } from '../lib/map/terrain';
+import { computeHeights, underTerrain } from '../lib/map/terrain';
 import type { PlacedIcon } from '../lib/world/types';
 
 export type Tool = 'brush' | 'fill' | 'hand';
@@ -124,9 +124,7 @@ export function MapCanvas(props: Props) {
       heightsStale.current = false;
     }
     if (iconsStale.current) {
-      const auto = autoTerrain(map.graph, map.land, heights.current, l.placed, seed, variantsOf, l.hidden);
-      const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, auto.noPlants, l.hidden);
-      for (const a of auto.icons) all.push({ x: a.x, y: a.y, size: a.size, set: a.kind, variant: a.variant, auto: a.key });
+      const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, underTerrain(map.graph, l.placed), l.hidden);
       for (const p of l.placed) all.push(placedToPlacement(p));
       // Back to front by ground point.
       all.sort((a, b) => a.y - b.y);

@@ -39,6 +39,11 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Cliffs (Stage 4) | One side only: a tall drop. North-facing cliffs show no face. No inked sides, so cliffs placed end to end join. Caleb chooses each cliff's shape (even, fading out to one side, or broken). |
 | Scaling (Stage 4) | Each icon can be sized on its own, the app's own icons included: selecting one takes it over as an icon placed by hand. |
 | Sizes (Stage 4) | Mountains 5.5 cell spacings wide, each sized by its polygon as in Nortantis, varying as much as there. Plants half their first size next to the terrain. |
+| Icons from elevation (after trying Stage 4) | Taken out: placing a mountain raised the ground and the app then drew more mountains around it. The elevation and heightmap stay (painting, readout, overlay, and icons placed by hand shaping the ground); only icons placed by hand are drawn. `SPEC.md` updated to match, at Caleb's request. |
+| Cliff size (after trying Stage 4) | A little smaller by default. |
+| Rivers drawn by hand (Stage 5, the spec's open item) | Both: draw one exactly where wanted, or click a source and let the app route it downhill. |
+| Waterfalls (Stage 5) | Both: one appears by itself where a river crosses a cliff, and they can be placed by hand. |
+| Lakes (Stage 5) | Stay painted water inside land. |
 
 ## Platform
 
@@ -203,15 +208,9 @@ The spec left two things to this stage: the drawing technology and the number of
 | See-through | On the atlas an icon hides the icons behind it but lets the land (its texture and coast shading) show through its inside, as on Caleb's map: each drawing has a mask that erases what is behind before it is stamped. On the painterly map terrain is filled with color that fades out toward the ground, so it does not stop at a hard line. | A flat fill made the icons look like cut-outs. |
 | Sharp at every zoom | Each drawing is made at a few widths (8 to 1,024 pixels) and stamped at the nearest, scaled. It is always drawn in the same units and scaled, so a mountain looks the same at every zoom. Drawings needed during a redraw are made at once for up to 40 ms; after that a nearby size stands in and the rest are made in the background, then the map redraws. | Zooming in stays smooth. |
 
-### Hills and mountains drawn by the app
+### Hills and mountains drawn by the app (taken out)
 
-| Item | Choice |
-| --- | --- |
-| Where | Land whose final height is 500 m or more gets hills; 1,500 m or more, mountains. Plants are not drawn on those cells. |
-| Size | A mountain is 5.5 cell spacings wide (Caleb's pick after comparing 2.75, 4 and 5.5 on the map), so each spans several polygons; a hill about half that. |
-| Size by polygon | As in Nortantis: each is scaled by its polygon's width between its east-most and west-most neighbors over the map's average (read from Nortantis's `IconDrawer.java`). Our polygons are evened out twice where Nortantis's default does it once (`VoronoiGraph.java`: one pass to the average of a cell's corners), so they vary about a fifth less (measured on 3 maps each: spread 0.22 against 0.26). The ratio is stretched by 1.21, which matches Nortantis's spread almost exactly (5% of cells at 0.59, 99% below 1.65, against 0.59 and 1.67 there). Kept within 0.45 to 1.9, which only catches odd cells along the map's border. Only these numbers were taken; no code. |
-| Spacing | Not one per cell (at this size that would be a solid mass): cells are taken in a fixed random order, and a mountain goes in only if it is at least 0.42 of the two widths' average from every mountain already in (so neighbors overlap by about a third); hills 0.6. The same ones are chosen every time. |
-| Height | No longer drawn larger on higher ground (the earlier rule); size comes from the polygon, as in Nortantis, and each drawing has its own height. |
+During Stage 4 the app drew hills (from 500 m) and mountains (from 1,500 m) by itself on high ground: 5.5 cell spacings wide, each scaled by its polygon's width between its neighbors over the map's average as Nortantis does (ratio stretched by 1.21 so sizes varied as much as Nortantis's, kept within 0.45 to 1.9), spaced across a range so neighbors overlapped by about a third. Caleb took this out after trying it on the site: placing a mountain raised the ground, and the app then drew more mountains around it. Only icons placed by hand are drawn now. The sizing and spacing code is in commit `1556a05` (`autoTerrain` in `src/lib/map/terrain.ts`), for random generation (Stage 6) to draw on if wanted.
 
 ### Terrain icons placed by hand (icons come before elevation)
 
@@ -221,11 +220,11 @@ The spec left two things to this stage: the drawing technology and the number of
 | Hill | Raises it to at least the hill's top, falling off softly | 700 m | 2.8 |
 | Volcano | The same as a mountain | 3,000 m | 5.8 |
 | Plateau | Raises a flat top with steep edges | 1,200 m | 6 |
-| Cliff | Raises the ground on the side away from the drop by the drop, fading out at its ends (and toward one end, for a cliff that fades out) | 300 m drop | 5 |
+| Cliff | Raises the ground on the side away from the drop by the drop, fading out at its ends (and toward one end, for a cliff that fades out) | 300 m drop | 4.2 (made a little smaller after Caleb tried it; it was 5) |
 
 - Cliffs step the ground first, then hills, mountains, volcanoes and plateaus raise it, as "at least this high". The polygon right under a hill, mountain or volcano placed by hand reads its full height, and the ground falls off softly around it, whatever was painted there.
 - A terrain icon placed by hand stays where Caleb put it. Painting elevation under it never moves or removes it.
-- Hills, mountains and volcanoes placed by hand take part in the spacing of the app's own: these keep the same distance from them as from each other. None of the app's own are drawn on a plateau placed by hand, or along a cliff.
+- A biome's plants are not drawn under a terrain icon placed by hand (around a hill's, mountain's or volcano's ground point, on a plateau's top, along a cliff), so they do not crowd it.
 - **Cliffs** are one side only (Caleb). Their direction is the compass direction the drop faces, 0 to 359° (180 = south, toward the viewer; new cliffs start there). A drop facing down the map shows a tall hatched rock face with cracks, ledges and loose rock at its foot; facing up the map, only the rim shows, with broken blocks along its lip and no rocks (rocks made it read as facing the viewer). Neither has inked sides: the rim thins out and the face fades at each end, so cliffs placed end to end join into one. Shape (chosen when placing, or later): even, fades out to the left, fades out to the right (as seen with the drop facing you), or broken in two.
 - Plants placed by hand (trees, cacti, shrubs, grass, dunes, reeds) are pictures only: they change neither the biome nor the elevation.
 - Icons can be placed anywhere on the map, water included, but they only shape land.
@@ -237,7 +236,7 @@ The spec left two things to this stage: the drawing technology and the number of
 | --- | --- |
 | Pick | Any terrain icon, or any plant or ground icon (the same drawings as the biome icons), from the panel on the right. The panel shows each one as drawn on the map. |
 | Place | With **Place**, click the map. The new icon is selected, so it can be adjusted at once. Clicking an icon placed by hand selects it instead. Each new icon gets one of its kind's drawings at random, and keeps it. |
-| Select | With **Select**, click any icon, the app's own hills, mountains and plants included (Caleb: each icon can be sized on its own). One of the app's own icons is taken over: it becomes an icon placed by hand, in the same spot, at the same size, with the same drawing, and the app leaves out its own copy. A hill or mountain taken over keeps the height of the ground it stood on, so taking it over does not raise the land. From then on it stays as Caleb leaves it, even if the ground or biome under it changes. Deleting it leaves the spot empty; undo gives it back to the app. Icons too small to see at the current zoom cannot be picked. |
+| Select | With **Select**, click any icon, a biome's plants included (Caleb: each icon can be sized on its own). One of the app's own icons is taken over: it becomes an icon placed by hand, in the same spot, at the same size, with the same drawing, and the app leaves out its own copy. From then on it stays as Caleb leaves it, even if the biome under it changes. Deleting it leaves the spot empty; undo gives it back to the app. Icons too small to see at the current zoom cannot be picked. |
 | Settings | Width in km; height or drop in meters (terrain icons); for cliffs, which way the drop faces and the shape, with a small preview. Set before placing, or edit the selected icon. |
 | Move, delete | Drag an icon to move it; `Delete` or `Backspace` removes the selected one; `Escape` lets go. Clicking the map takes focus away from the panel's fields (keeping what was typed), so `Delete` then works on the map. |
 | Undo | Placing, taking over, moving, editing and deleting share the undo history with painting. Edits to the same icon less than a second apart (dragging the direction slider, typing a number) are one step. |

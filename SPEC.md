@@ -45,7 +45,7 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 
 - The ocean is just water: no ocean biomes, no depth. The focus is land detail.
 - Land has elevation. It matters for worldbuilding, especially for designing military campaigns, because elevation often decides battles.
-- Elevation works both ways: shaping the elevation produces terrain icons, and placing terrain icons shapes the elevation.
+- Placing terrain icons shapes the elevation. Shaping the elevation does not place icons: only icons placed by hand are drawn.
 - Icons come before elevation. A terrain icon placed by hand stays exactly where I put it, and the elevation under it reads at least that icon's height, whatever is painted around it.
 - Terrain icons, starter set: hills, mountains, volcanoes, plateaus, cliffs. (Valleys and passes are not needed; canyons are dropped for now, since cliffs cover a drop.)
 - Rivers, lakes and waterfalls follow the elevation. Random generation uses it too: rivers run downhill, mountains follow ridges.
