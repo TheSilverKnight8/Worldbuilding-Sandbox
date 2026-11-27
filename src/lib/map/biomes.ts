@@ -15,6 +15,12 @@ const STARTER: { name: string; color: string; icons: IconSet }[] = [
   { name: 'Ice', color: '#eef2f4', icons: 'none' },
 ];
 
+/** How a starter biome looks, by name (for previewing a generated map before it is kept). */
+export function starterLook(name: string): SlotLook | null {
+  const s = STARTER.find((b) => b.name === name);
+  return s ? { color: s.color, icons: s.icons } : null;
+}
+
 export const ICON_SETS: { value: IconSet; label: string }[] = [
   { value: 'deciduous', label: 'Leafy trees' },
   { value: 'pine', label: 'Pine trees' },

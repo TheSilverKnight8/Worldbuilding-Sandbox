@@ -100,7 +100,7 @@ export function drainage(g: Graph, land: Uint8Array, heights: Int16Array): Int32
 }
 
 /** The middle of the edge between cell c and its neighbor n (n = -1: water; -2: the map's edge). */
-function outletPoint(g: Graph, land: Uint8Array, c: number, kind: number): Pt {
+export function outletPoint(g: Graph, land: Uint8Array, c: number, kind: number): Pt {
   for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1]; k++) {
     const e = g.cellEdges[k];
     const n = across(g, e, c);

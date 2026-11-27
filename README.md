@@ -12,7 +12,7 @@ It is an installable web app (PWA) for Chrome on a computer (Mac or Windows), ho
 | Worlds | Up to 3 worlds. Create one (it asks for a name), open it, delete it (asks to confirm). Creating or importing a fourth is refused with a message to delete one first. |
 | Saving | Changes save by themselves half a second after the last edit, in the browser's storage (IndexedDB). The header shows Saving / Saved. The app asks Chrome to keep its storage even when the disk runs low; Home says whether Chrome agreed. |
 | Export and import | Export saves a world as one file (`<name>.world.json`), images and map included. Import adds a world from such a file. Files carry a format version, so files exported today still open after the app changes. |
-| Map | Set the map's size in kilometers. It is made of 16,000 irregular polygons and starts as open water. Draw land and water with a brush or fill; undo and redo. A readout gives positions in km. |
+| Map | Set the map's size in kilometers. It is made of 16,000 irregular polygons. Start from open water, or **generate** a map (amount of land, continents or islands, how mountainous, climate) with land, elevation, lakes, terrain icons, rivers and biomes: preview it in either look, generate again until you like one, and keep it. Either way, draw land and water with a brush or fill; undo and redo. A readout gives positions in km. |
 | Two looks | **Atlas**: a fantasy atlas in ink on parchment, a pale sea and darker olive-tan land, matched to a Nortantis map of Caleb's; biomes show only through icons. **Painterly**: a colorful painted map, blue sea, biome colors blended softly, the same icons in color. Toggle over the map's top-right corner; remembered per world on this computer. |
 | Biomes | Starts with a short list of broad biomes (forest, pine forest, jungle, grassland, desert, swamp, tundra, ice). Each has a color and a set of icons (trees, pines, palms, cacti, shrubs, grass, dunes, reeds, or none) drawn in code. Paint them on land with a brush or fill; add, rename, recolor, change icons, delete. |
 | Elevation | Every land cell has a height in meters (new land starts at 100 m). Paint it with Set, Raise, Lower and Smooth; the coast stays as painted. Terrain icons placed by hand shape it; the elevation itself places no icons. The readout shows the height under the mouse; the **Elevation** overlay colors land by height, with contour lines and a key. |
@@ -20,7 +20,7 @@ It is an installable web app (PWA) for Chrome on a computer (Mac or Windows), ho
 | Icons | Drawn in code in an ink style matched to a Nortantis map of Caleb's: mountains, hills, volcanoes, plateaus and cliffs after the bonus art pack for Nortantis, plants after the FA01-Temperate pack (style references only; no pack art is used). **Place** single icons by hand: mountains, hills, volcanoes, plateaus and cliffs, which shape the ground around them, trees, palms, cacti, shrubs, grass, dunes and reeds, and waterfalls. **Select** any icon, a biome's plants and the waterfalls on rivers included, to move, resize or delete it; one of the app's own then stays as you leave it. Cliffs and waterfalls face any of 8 directions, each drawn as seen from that side (a drop facing away shows only its rim); cliffs can be even, fade out to one side, or be broken. Undo and redo. |
 | Hover | The polygon under the mouse is outlined. |
 
-Coming next (Stage 6): random generation.
+Coming next (Stage 7): entries.
 
 ### Map controls
 
@@ -67,10 +67,10 @@ Clearing Chrome's site data for the address deletes the worlds stored there. An 
 ```
 src/
   lib/world/     world shape (records, fields, blobs, map), format version, export and import files
-  lib/map/       polygons, noisy edges, coastlines, biomes, elevation and terrain, rivers, icons, both looks, the painting tools
+  lib/map/       polygons, noisy edges, coastlines, biomes, elevation and terrain, rivers, icons, both looks, the painting tools, the map generator
   lib/map/art/   the icons' drawings, in code (terrain, cliffs, plants, waterfalls)
   lib/           browser storage (IndexedDB), app state and autosave
-  map/           map setup, map editor, map canvas, biome panel, rivers panel, icons panel
+  map/           map setup (open water or generated, with a preview), map editor, map canvas, biome panel, rivers panel, icons panel
   pages/         Home (the world list), World
   components/    app frame, dialogs, shared pieces
   graphics/      app icon, Croswell Industries logo

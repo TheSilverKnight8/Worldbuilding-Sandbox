@@ -4,6 +4,7 @@ import { addWorld, deleteWorldData, getBlob, listBlobs, listWorlds, putBlob, rea
 import { newId } from './ids';
 import { MAX_BIOMES, biomeRecord, seedBiomes, slotFor } from './map/biomes';
 import { DEFAULT_CELLS, elevationFromBlob, elevationToBlob, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
+import { GEN_BIOMES, type GeneratedMap } from './map/generate';
 import { DEFAULT_LAND_ELEVATION } from './map/terrain';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
@@ -427,17 +428,34 @@ export function checkMapSize(widthKm: number, heightKm: number): string | null {
 }
 
 /** Sets up the open world's map: a new polygon graph of the given size in km, all water, with the starter biomes. */
-export async function setupMap(widthKm: number, heightKm: number): Promise<Result> {
+/** A generated map waiting to be kept: its polygons (and their seed) and what the generator made on them. */
+export interface MapDraft {
+  widthKm: number;
+  heightKm: number;
+  graph: Graph;
+  seed: number;
+  generated: GeneratedMap;
+}
+
+/** New polygons for a map of this size (for a generated map's preview; a blank map makes its own). */
+export function makeMapGraph(widthKm: number, heightKm: number, seed: number) {
+  const units = mapUnitsFor(widthKm, heightKm);
+  return generateGraph(units.width, units.height, DEFAULT_CELLS, seed);
+}
+
+/** Sets up the open world's map: blank (open water), or the generated `draft`. */
+export async function setupMap(widthKm: number, heightKm: number, draft?: MapDraft): Promise<Result> {
   const doc = state.open.kind === 'ready' ? state.open.world : null;
   if (!doc || doc.map) return { ok: false, reason: 'This world already has a map.' };
   const problem = checkMapSize(widthKm, heightKm);
   if (problem) return { ok: false, reason: problem };
+  if (draft && (draft.widthKm !== widthKm || draft.heightKm !== heightKm)) return { ok: false, reason: 'The generated map is for another size.' };
   const worldId = doc.id;
   // Let the screen show that the map is being made before the heavy work starts.
   await new Promise((r) => window.setTimeout(r, 30));
   const units = mapUnitsFor(widthKm, heightKm);
-  const seed = newSeed();
-  const graph = generateGraph(units.width, units.height, DEFAULT_CELLS, seed);
+  const seed = draft ? draft.seed : newSeed();
+  const graph = draft ? draft.graph : generateGraph(units.width, units.height, DEFAULT_CELLS, seed);
   const landBlob = newId();
   const map: MapInfo = {
     widthKm,
@@ -463,12 +481,21 @@ export async function setupMap(widthKm: number, heightKm: number): Promise<Resul
     return { ok: false, reason: storageMessage(e) };
   }
   if (state.open.kind !== 'ready' || state.open.world.id !== worldId) return { ok: false, reason: 'The world was closed.' };
-  mapData = { graph, land: new Uint8Array(graph.cellCount), biome: new Uint8Array(graph.cellCount), elevation: new Int16Array(graph.cellCount) };
+  const seeded = seedBiomes(state.open.world, map);
+  const biome = new Uint8Array(graph.cellCount);
+  if (draft) {
+    // The generator paints with the starter biomes by name; each goes in the slot of the biome of that name.
+    const slotOf = GEN_BIOMES.map((name) => seeded.map.biomeSlots.findIndex((id, i) => i > 0 && !!id && seeded.doc.records[id]?.kind === 'biome' && seeded.doc.records[id].name === name));
+    draft.generated.biome.forEach((b, c) => (biome[c] = b ? Math.max(0, slotOf[b - 1]) : 0));
+  }
+  mapData = {
+    graph,
+    land: draft ? draft.generated.land.slice() : new Uint8Array(graph.cellCount),
+    biome,
+    elevation: draft ? draft.generated.elevation.slice() : new Int16Array(graph.cellCount),
+  };
   layersDirty = true;
-  updateWorld((d) => {
-    const s = seedBiomes(d, map);
-    return { ...s.doc, map: s.map };
-  });
+  updateWorld(() => ({ ...seeded.doc, map: draft ? { ...seeded.map, icons: draft.generated.icons, rivers: draft.generated.rivers } : seeded.map }));
   emitMap('all');
   return { ok: true, value: undefined };
 }

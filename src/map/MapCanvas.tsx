@@ -5,12 +5,13 @@ import type { SlotLook } from '../lib/map/biomes';
 import { cellOutline } from '../lib/map/cells';
 import { buildCoast, type Coast } from '../lib/map/coast';
 import { cellAt, type Graph } from '../lib/map/graph';
-import { iconBox, iconHit, minPixels, onSpritesReady, placeIcons, placementLook, variantsOf, type Placement } from '../lib/map/icons';
+import { iconBox, iconHit, minPixels, onSpritesReady, placementLook, type Placement } from '../lib/map/icons';
 import { NoisyEdges } from '../lib/map/noisy';
-import { riverAt, riverShapes, riverWaterfalls, routeRiver, simplify, snapToRivers, underRivers, type RiverShape } from '../lib/map/rivers';
+import { riverAt, riverShapes, routeRiver, simplify, snapToRivers, type RiverShape } from '../lib/map/rivers';
+import { mapIcons, placedToPlacement } from '../lib/map/scene';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
-import { computeHeights, underTerrain } from '../lib/map/terrain';
+import { computeHeights } from '../lib/map/terrain';
 import type { PlacedIcon, River } from '../lib/world/types';
 
 export type Tool = 'brush' | 'fill' | 'hand';
@@ -77,16 +78,7 @@ const SETTLE_MS = 110;
 /** A seed for the little wander of a river routed from (x, y), so routing the same spot twice comes out the same. */
 const mixRouteSeed = (x: number, y: number) => (Math.round(x * 1000) * 73856093) ^ (Math.round(y * 1000) * 19349663);
 
-/** An icon placed by hand, as the map draws it. */
-export function placedToPlacement(p: PlacedIcon): Placement {
-  let variant = p.variant;
-  if (variant === undefined) {
-    let h = 0;
-    for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) | 0;
-    variant = Math.abs(h);
-  }
-  return { x: p.x, y: p.y, size: p.size, set: p.kind, variant: variant % variantsOf(p.kind), angle: p.angle, shape: p.shape, placed: p.id };
-}
+export { placedToPlacement };
 
 /** The map on screen, in the atlas or painterly look. */
 export function MapCanvas(props: Props) {
@@ -135,21 +127,7 @@ export function MapCanvas(props: Props) {
     const l = live.current;
     const b = builtFrom.current;
     if (!map || (!iconsStale.current && b && b.placed === l.placed && b.hidden === l.hidden && b.shapes === l.shapes)) return icons.current;
-    // A biome's plants stay off terrain icons placed by hand and off the rivers.
-    const keepOff = underTerrain(map.graph, l.placed);
-    const wet = underRivers(map.graph, l.shapes);
-    for (let c = 0; c < keepOff.length; c++) keepOff[c] |= wet[c];
-    const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, keepOff, l.hidden);
-    // Waterfalls where rivers cross cliffs.
-    for (const w of riverWaterfalls(l.shapes, l.placed, l.hidden)) {
-      let h = 0;
-      for (let i = 0; i < w.key.length; i++) h = (h * 31 + w.key.charCodeAt(i)) | 0;
-      all.push({ x: w.x, y: w.y, size: w.size, set: 'waterfall', variant: Math.abs(h) % variantsOf('waterfall'), angle: w.angle, auto: w.key });
-    }
-    for (const p of l.placed) all.push(placedToPlacement(p));
-    // Back to front by ground point (a waterfall's point is its lip, so it goes by its foot, in front of its cliff).
-    const depth = (p: Placement) => (p.set === 'waterfall' ? p.y + p.size * 0.7 : p.y);
-    all.sort((a, b) => depth(a) - depth(b));
+    const all = mapIcons(map.graph, map.land, map.biome, l.looks, seed, l.placed, l.hidden, l.shapes);
     icons.current = all;
     iconsStale.current = false;
     builtFrom.current = { placed: l.placed, hidden: l.hidden, shapes: l.shapes };

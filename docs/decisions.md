@@ -12,7 +12,8 @@ The build order is in `SPEC.md` ("Build order"), agreed with Caleb: 11 stages, m
 2. Polygon map and the atlas look **(done)**.
 3. Biomes and the painterly look **(done)**.
 4. Elevation and terrain icons **(done)**; the map icons were redrawn during it.
-5. Rivers, lakes and waterfalls **(this stage)**; cliffs and waterfalls got a drawing for each direction during it.
+5. Rivers, lakes and waterfalls **(done)**; cliffs and waterfalls got a drawing for each direction during it.
+6. Random generation **(this stage)**.
 
 The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not merged; the polygon map replaces it. The branch is kept for reference.
 
@@ -45,6 +46,10 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Rivers drawn by hand (Stage 5, the spec's open item) | Both: draw one exactly where wanted, or click a source and let the app route it downhill. `SPEC.md` updated to match (with the lakes, waterfalls and 8 directions below) and the open item closed, at Caleb's request. |
 | Waterfalls (Stage 5) | Both: one appears by itself where a river crosses a cliff, and they can be placed by hand. |
 | Lakes (Stage 5) | Stay painted water inside land. |
+| Where generation is offered (Stage 6) | At setup only: start from open water or a generated map; generate again as often as wanted before keeping one, then edit by hand. |
+| Generation settings (Stage 6) | All four: amount of land, continents or islands, how mountainous, climate. |
+| Generated terrain icons (Stage 6) | Like icons placed by hand: stored, movable, resizable, deletable, shaping the elevation; nothing redrawn from the elevation. |
+| What generation places (Stage 6) | Besides land, elevation, rivers and biomes: mountains and hills, volcanoes, plateaus and cliffs, and lakes. |
 | Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
 
 ## Platform
@@ -331,6 +336,38 @@ The map is seen from the south and from above, so a face always hangs straight d
 ### Speed
 
 A brush stroke over a forest-covered continent (the Stage 4 measure): about 17 ms a frame typically, 67 ms at worst.
+
+## Random generation (Stage 6)
+
+The generator is the app's own code (`src/lib/map/generate.ts`), using general techniques: plates grown from random cells with ridges where they push together, as described for plate-based map generators (Nortantis's own docs say only that it uses a simple tectonic plate simulation; none of its code was looked at or used), and biomes from temperature and moisture after Whittaker's table, as in Amit Patel's polygon map generation.
+
+### Setup
+
+| Item | Choice |
+| --- | --- |
+| Where | Map setup only (Caleb): **Start with** open water (as before, the default) or **a generated map**. |
+| Preview | **Generate** draws the map whole, by the map's own renderer, in either look. **Generate again** makes a new one with the current settings, as often as wanted; the same polygons are reused for the same size, so it takes about a fifth of a second. Changing the size clears the preview. Nothing is saved until **Keep this map**, which opens the editor in the look shown in the preview. |
+| Settings | **Amount of land** (10 to 70%, default 35%), **Continents or islands** (one continent, a few continents (default), islands), **How mountainous** (few, low ranges to many, high ranges; default moderate), **Climate** (cold to hot; default temperate). |
+| Stored | A generated map is stored like any other (polygons, land, biomes, elevation, icons, rivers), and from then on edited by hand. The settings and the generation's seed are not kept, and nothing is generated again later. No format change (still 6). |
+
+### What it makes, in order
+
+| Step | Choice |
+| --- | --- |
+| Land | Landmasses as blobs whose coasts are warped by noise: 1, 2 to 4, or 10 to 19 by the setting, spread over the map. Noise adds bays, peninsulas and small islands. Plates (9, 12 or 18) are grown from random cells at random rates, each drifting its own way; where two push together hard enough (more of them on a more mountainous map) the ground rises in a ridge, so mountains follow ridges; where they pull apart it sinks a little. The sea level is set so exactly the amount of land asked for is above it. Specks of land under about 6 cells go under, and puddles under 8 cells are filled in. Land is kept a little off the map's edge. |
+| Elevation | Low along the coast, rising inland to several hundred meters; ranges on the ridges, as high as about 1,000 m (barely mountainous) to 5,000 m (very). |
+| Lakes | About one per 1,600 land cells (fewer for islands), 3 to 14 cells each, filling hollows at least 4 cells from the sea and below 1,400 m. |
+| Terrain icons | Stored as placed icons (Caleb). Plateaus (none to 4, more on a more mountainous map) on broad high ground away from the ranges. Lines of cliffs (none to 4), 2 to 4 cliffs end to end, facing north or south and fading out at both ends: slanting ones read as streaks, and east- or west-facing ones as thin lines, at the scale of a whole map (any direction can be set by hand). A few volcanoes (up to about 5, more for islands and on a more mountainous map), near a coast on a range, or on islands. Mountains from 1,500 m and hills from 450 m on and around the ranges, each sized by its polygon as Nortantis sizes its own and spaced across a range (the sizing set aside in Stage 4). |
+| Rivers | Rain (from the moisture below) runs downhill over the ground as the icons shape it; where about twenty cells' worth has gathered there is a river. Each runs from its source to the sea, the map's edge, or into a bigger river (ending on it); its width at the mouth grows with the water it carries (the largest about 0.45 cell spacings). Water runs through lakes, so rivers flow into a lake and out again, or start at one (rivers are drawn on land only). They are stored like rivers drawn by hand. |
+| Biomes | Temperature: from the climate setting (about -6 °C in the middle of the map when cold to 34 °C when hot), about 7 °C colder per 1,000 km northward, and 6.5 °C colder per 1,000 m up. Moisture: from the sea, falling off over about 500 km inland, more near rivers and lakes, less behind high mountains to the west (winds from the west), with noise. Then: ice below -4 °C; tundra below 2 °C; pine forest (tundra if dry) below 8 °C; then by moisture desert (warm and dry), grassland, forest, pine forest (cool and wet), jungle (hot and wet); swamp on warm, wet, low ground near water. Painted with the starter biomes, by name; a lone cell takes its neighbors' biome. |
+
+### Also changed
+
+- The editor's map and the preview share the code that lists every icon to draw (`src/lib/map/scene.ts`).
+
+### Speed
+
+In the test browser: about 0.1 to 0.2 s to generate a map; the first one at a size also makes the polygons (about 0.6 s).
 
 ## Data structure (agreed with Caleb)
 
