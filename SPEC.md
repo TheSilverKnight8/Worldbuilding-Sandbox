@@ -50,7 +50,7 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 - Terrain icons, starter set: hills, mountains, volcanoes, plateaus, cliffs. (Valleys and passes are not needed; canyons are dropped for now, since cliffs cover a drop.) Cliffs and waterfalls face any of the 8 compass directions, each drawn as seen from that side.
 - Rivers, lakes and waterfalls follow the elevation. Random generation uses it too: rivers run downhill, mountains follow ridges.
 - Rivers are either drawn by hand, exactly where I put them, or routed downhill by the app from a source I click. Lakes are water painted inside land. A waterfall appears where a river crosses a cliff, and waterfalls can also be placed by hand.
-- Seeing elevation: the readout under the map, plus an elevation overlay to toggle on.
+- Seeing elevation: the readout under the map, plus an elevation overlay to toggle on. The overlay uses both: land colored by height, with contour lines.
 
 ### Biomes
 
@@ -151,5 +151,4 @@ Macro to micro, with a test checkpoint at the end of each stage.
 
 ## Open items
 
-- Elevation overlay: contour lines, shading, or both. Claude Code picks at Stage 4 unless I say otherwise.
 - Where the language tools go in the build order.

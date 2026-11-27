@@ -249,7 +249,7 @@ The polygon under the mouse is outlined in red, along its wiggly edges as the ma
 
 ### Elevation readout and overlay
 
-The spec left the form of the overlay to this stage ("contour lines, shading, or both"). Picked: both, with the shading as colors by height.
+The spec left the form of the overlay to this stage ("contour lines, shading, or both"). Picked: both, with the shading as colors by height. Caleb kept it as it is; `SPEC.md` updated to match and the open item closed, at his request.
 
 | Item | Choice |
 | --- | --- |
