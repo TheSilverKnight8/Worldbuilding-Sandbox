@@ -229,7 +229,7 @@ The spec left two things to this stage: the drawing technology and the number of
 - **Cliffs** are one side only (Caleb). Their direction is the compass direction the drop faces, 0 to 359° (180 = south, toward the viewer; new cliffs start there). A drop facing down the map shows a tall hatched rock face with cracks, ledges and loose rock at its foot; facing up the map, only the rim shows, with broken blocks along its lip and no rocks (rocks made it read as facing the viewer). Neither has inked sides: the rim thins out and the face fades at each end, so cliffs placed end to end join into one. Shape (chosen when placing, or later): even, fades out to the left, fades out to the right (as seen with the drop facing you), or broken in two.
 - Plants placed by hand (trees, cacti, shrubs, grass, dunes, reeds) are pictures only: they change neither the biome nor the elevation.
 - Icons can be placed anywhere on the map, water included, but they only shape land.
-- **Dropped:** valleys and passes (Caleb: not needed) and canyons (Caleb: dropped for now; they did not read as precipices, and cliffs cover a drop). `SPEC.md`, which is Caleb's, still lists them in the starter set.
+- **Dropped:** valleys and passes (Caleb: not needed) and canyons (Caleb: dropped for now; they did not read as precipices, and cliffs cover a drop). `SPEC.md`'s starter set was updated to match, at Caleb's request.
 
 ### Icons mode (placing single icons)
 
