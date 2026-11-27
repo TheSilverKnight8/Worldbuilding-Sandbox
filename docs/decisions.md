@@ -42,7 +42,7 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Sizes (Stage 4) | Mountains 5.5 cell spacings wide, each sized by its polygon as in Nortantis, varying as much as there. Plants half their first size next to the terrain. |
 | Icons from elevation (after trying Stage 4) | Taken out: placing a mountain raised the ground and the app then drew more mountains around it. The elevation and heightmap stay (painting, readout, overlay, and icons placed by hand shaping the ground); only icons placed by hand are drawn. `SPEC.md` updated to match, at Caleb's request. |
 | Cliff size (after trying Stage 4) | A little smaller by default. |
-| Rivers drawn by hand (Stage 5, the spec's open item) | Both: draw one exactly where wanted, or click a source and let the app route it downhill. |
+| Rivers drawn by hand (Stage 5, the spec's open item) | Both: draw one exactly where wanted, or click a source and let the app route it downhill. `SPEC.md` updated to match (with the lakes, waterfalls and 8 directions below) and the open item closed, at Caleb's request. |
 | Waterfalls (Stage 5) | Both: one appears by itself where a river crosses a cliff, and they can be placed by hand. |
 | Lakes (Stage 5) | Stay painted water inside land. |
 | Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
