@@ -99,6 +99,17 @@ export interface MapInfo {
    * is left out. Keys are made in lib/map/terrain.ts and lib/map/icons.ts.
    */
   hiddenAuto: string[];
+  /** Rivers (Stage 5), drawn by hand or routed downhill by the app, then stored as drawn. */
+  rivers: River[];
+}
+
+/** A river: a line from its source to its mouth. It widens toward the mouth, and below where other rivers join it. */
+export interface River {
+  id: string;
+  /** From the source to the mouth: x, y in map units (smoothed when drawn). */
+  points: [number, number][];
+  /** Its own width at the mouth, in map units (rivers joining it add to the width below them). */
+  width: number;
 }
 
 /** How a biome shows on the fantasy atlas (Stage 3): a set of icons drawn in code, or nothing. */
@@ -111,11 +122,11 @@ export type TerrainKind = 'hill' | 'mountain' | 'volcano' | 'plateau' | 'cliff';
 export type CliffShape = 'even' | 'taper-left' | 'taper-right' | 'broken';
 export const CLIFF_SHAPES: readonly CliffShape[] = ['even', 'taper-left', 'taper-right', 'broken'];
 
-/** Anything that can be placed as a single icon: terrain, or a biome's plants and ground. */
-export type IconKind = TerrainKind | Exclude<IconSet, 'none'>;
+/** Anything that can be placed as a single icon: terrain, a biome's plants and ground, or a waterfall (Stage 5). */
+export type IconKind = TerrainKind | Exclude<IconSet, 'none'> | 'waterfall';
 
 export const TERRAIN_KINDS: readonly TerrainKind[] = ['mountain', 'hill', 'volcano', 'plateau', 'cliff'];
-export const ICON_KINDS: readonly IconKind[] = [...TERRAIN_KINDS, 'deciduous', 'pine', 'jungle', 'cactus', 'shrub', 'grass', 'dunes', 'reeds'];
+export const ICON_KINDS: readonly IconKind[] = [...TERRAIN_KINDS, 'deciduous', 'pine', 'jungle', 'cactus', 'shrub', 'grass', 'dunes', 'reeds', 'waterfall'];
 
 /**
  * An icon placed by hand. It stays exactly where Caleb put it. Terrain icons also shape
@@ -131,7 +142,7 @@ export interface PlacedIcon {
   size: number;
   /** Which of the kind's drawings. */
   variant?: number;
-  /** Cliffs: the compass direction the drop faces, in degrees (0 north, 90 east, 180 south, toward the viewer). */
+  /** Cliffs: the compass direction the drop faces, in degrees (0 north, 90 east, 180 south, toward the viewer). A waterfall taken over from a cliff keeps the cliff's. */
   angle?: number;
   /** Cliffs: the shape along its length. */
   shape?: CliffShape;

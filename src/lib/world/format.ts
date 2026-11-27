@@ -1,4 +1,4 @@
-import { CLIFF_SHAPES, ICON_KINDS, RECORD_KINDS, type CliffShape, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
+import { CLIFF_SHAPES, ICON_KINDS, RECORD_KINDS, type CliffShape, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type River, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
 
 // Every world carries a format version, both in this browser's storage and in an
 // exported file. When the shape of a world changes, FORMAT_VERSION goes up and
@@ -11,9 +11,10 @@ import { CLIFF_SHAPES, ICON_KINDS, RECORD_KINDS, type CliffShape, type FieldValu
 //   3  Stage 2: the polygon map (WorldDoc.map), with its polygons and land as blobs.
 //   4  Stage 3: biomes on the map (a biome grid blob and biome slots).
 //   5  Stage 4: elevation (a base elevation blob) and icons placed by hand.
+//   6  Stage 5: rivers.
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 5;
+export const FORMAT_VERSION = 6;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
@@ -46,6 +47,8 @@ function upgrade(raw: Record<string, unknown>, from: number): Record<string, unk
     const m = rec(o.map);
     o = { ...o, map: { ...m, elevationBlob: `${String(m.landBlob)}-elevation`, icons: [], hiddenAuto: [] } };
   }
+  // 5 -> 6: a map gets no rivers yet.
+  if (from < 6 && o.map) o = { ...o, map: { ...rec(o.map), rivers: [] } };
   return o;
 }
 
@@ -98,7 +101,28 @@ function readMap(v: unknown): MapInfo | null {
     elevationBlob: isStr(m.elevationBlob) ? m.elevationBlob : `${m.landBlob}-elevation`,
     icons: readIcons(m.icons),
     hiddenAuto: Array.isArray(m.hiddenAuto) ? (m.hiddenAuto as unknown[]).filter(isStr).slice(0, 200000) : [],
+    rivers: readRivers(m.rivers, m.width, m.height),
   };
+}
+
+/** Rivers that make sense: an ID, at least two points on the map, a width. Others are left out. */
+function readRivers(v: unknown, w: number, h: number): River[] {
+  if (!Array.isArray(v)) return [];
+  const out: River[] = [];
+  const ids = new Set<string>();
+  for (const item of v.slice(0, 5000)) {
+    const r = rec(item);
+    if (!isStr(r.id) || ids.has(r.id) || !isPos(r.width) || !Array.isArray(r.points)) continue;
+    const points: [number, number][] = [];
+    for (const p of (r.points as unknown[]).slice(0, 20000)) {
+      if (!Array.isArray(p) || !isNum(p[0]) || !isNum(p[1])) continue;
+      points.push([Math.max(0, Math.min(w, p[0])), Math.max(0, Math.min(h, p[1]))]);
+    }
+    if (points.length < 2) continue;
+    ids.add(r.id);
+    out.push({ id: r.id, points, width: r.width });
+  }
+  return out;
 }
 
 /**

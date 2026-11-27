@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
 import { Button, IconButton, Input, Select, cx } from '../components/ui';
-import { aspectOf, iconBox, iconSprite, placementLook } from '../lib/map/icons';
-import { KINDS } from '../lib/map/terrain';
+import { frameOf, iconSprite, placementLook } from '../lib/map/icons';
+import { KINDS, dirOf } from '../lib/map/terrain';
 import { CLIFF_SHAPES, ICON_KINDS, TERRAIN_KINDS, type CliffShape, type IconKind, type PlacedIcon } from '../lib/world/types';
 
-/** Settings for an icon: width in km, meters (height or drop), a cliff's direction (compass degrees its drop faces) and shape. */
+/** Settings for an icon: width in km, meters (height or drop), a cliff's or waterfall's direction (compass degrees, one of 8) and a cliff's shape. */
 export interface IconSettings {
   sizeKm: number;
   meters?: number;
@@ -27,9 +27,13 @@ interface Props {
   onDeselect: () => void;
 }
 
-const PLANTS = ICON_KINDS.filter((k) => !TERRAIN_KINDS.includes(k as never));
+const PLANTS = ICON_KINDS.filter((k) => KINDS[k].group === 'plants');
+const WATER = ICON_KINDS.filter((k) => KINDS[k].group === 'water');
 const SHAPE_LABELS: Record<CliffShape, string> = { even: 'Even', 'taper-left': 'Fades out to the left', 'taper-right': 'Fades out to the right', broken: 'Broken in two' };
 const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
+const COMPASS_SHORT = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+/** The 8 directions laid out as on a compass (null: the middle). */
+const COMPASS_GRID = [7, 0, 1, 6, null, 2, 5, 4, 3] as const;
 
 /** A small picture of an icon, drawn with the same code as the map's. */
 function Preview({ kind, variant = 0, angle, shape, size = 30 }: { kind: IconKind; variant?: number; angle?: number; shape?: CliffShape; size?: number }) {
@@ -42,21 +46,16 @@ function Preview({ kind, variant = 0, angle, shape, size = 30 }: { kind: IconKin
     const ctx = c.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size, size);
-    const aspect = aspectOf(kind);
-    // As wide as fits, keeping the drawing's shape; centered in the box.
-    const w = Math.min(size - 4, (size - 4) / aspect);
-    const h = w * aspect;
-    const { turn, look } = placementLook({ set: kind, angle, shape });
+    const look = placementLook({ set: kind, angle, shape });
+    const f = frameOf(kind, look);
+    // As wide as fits, keeping the drawing's shape; its box centered.
+    const w = (size - 4) / Math.max(f.w, f.h);
     const sp = iconSprite(kind, variant, 'atlas', Math.round(w * dpr), look, true);
     if (!sp) return;
     const k = w / sp.w;
-    const b = iconBox({ set: kind, size: w }, look.away);
-    ctx.save();
-    // The ground point, so that the drawing's box sits in the middle (a cliff turns around it).
-    ctx.translate(size / 2, kind === 'cliff' ? size / 2 : (size - h) / 2 - b.top);
-    if (turn) ctx.rotate((turn * Math.PI) / 180);
-    ctx.drawImage(sp.canvas, -sp.ax * k, -sp.ay * k, sp.canvas.width * k, sp.canvas.height * k);
-    ctx.restore();
+    const x = size / 2 - w * (f.w / 2 - f.ax);
+    const y = size / 2 - w * (f.h / 2 - f.ay);
+    ctx.drawImage(sp.canvas, x - sp.ax * k, y - sp.ay * k, sp.canvas.width * k, sp.canvas.height * k);
   }, [kind, variant, angle, shape, size]);
   return <canvas ref={ref} style={{ width: size, height: size }} aria-hidden />;
 }
@@ -116,31 +115,41 @@ function NumberField({ label, unit, value, min, max, step, onChange }: { label: 
 
 function Settings({ kind, settings, onChange }: { kind: IconKind; settings: IconSettings; onChange: (s: IconSettings) => void }) {
   const info = KINDS[kind];
-  const angle = Math.round(settings.angle ?? 180) % 360;
+  const dir = dirOf({ angle: settings.angle });
   return (
     <div className="space-y-3">
       <NumberField label="Width" unit="km" value={Math.round(settings.sizeKm * 10) / 10} min={0.1} max={5000} step={1} onChange={(v) => onChange({ ...settings, sizeKm: v })} />
       {info.meters && <NumberField label={info.meters.label} unit="m" value={settings.meters ?? info.meters.value} min={0} max={9000} step={50} onChange={(v) => onChange({ ...settings, meters: v })} />}
-      {info.rotatable && (
+      {info.directional && (
+        <div className="space-y-1">
+          <span className="block text-sm">{kind === 'cliff' ? 'Drop faces' : 'Falls toward'}</span>
+          <div className="flex items-center gap-3">
+            <div role="radiogroup" aria-label={kind === 'cliff' ? 'Drop faces' : 'Falls toward'} className="grid grid-cols-3 gap-1">
+              {COMPASS_GRID.map((d, i) =>
+                d === null ? (
+                  <span key={i} />
+                ) : (
+                  <button
+                    key={i}
+                    type="button"
+                    role="radio"
+                    aria-checked={dir === d}
+                    aria-label={COMPASS[d]}
+                    title={COMPASS[d]}
+                    onClick={() => onChange({ ...settings, angle: d * 45 })}
+                    className={cx('h-7 w-9 rounded-md border font-mono text-[0.6875rem] transition', dir === d ? 'border-navy bg-navy text-on-accent' : 'border-line bg-raised hover:border-navy/50')}
+                  >
+                    {COMPASS_SHORT[d]}
+                  </button>
+                ),
+              )}
+            </div>
+            <Preview kind={kind} angle={dir * 45} shape={settings.shape} size={64} />
+          </div>
+        </div>
+      )}
+      {kind === 'cliff' && (
         <>
-          <label className="block space-y-1">
-            <span className="block text-sm">Drop faces</span>
-            <span className="flex items-center gap-2">
-              <input
-                type="range"
-                className="slider flex-1"
-                min={0}
-                max={359}
-                value={angle}
-                aria-label="Drop faces"
-                style={{ ['--fill' as string]: `${(angle / 359) * 100}%` }}
-                onChange={(e) => onChange({ ...settings, angle: Number(e.target.value) })}
-              />
-              <span className="w-24 text-right font-mono text-xs">
-                {angle}° {COMPASS[Math.round(angle / 45) % 8]}
-              </span>
-            </span>
-          </label>
           <label className="block space-y-1">
             <span className="block text-sm">Shape</span>
             <Select value={settings.shape ?? 'even'} aria-label="Shape" className="h-9 w-full text-sm" onChange={(e) => onChange({ ...settings, shape: e.target.value as CliffShape })}>
@@ -151,10 +160,7 @@ function Settings({ kind, settings, onChange }: { kind: IconKind; settings: Icon
               ))}
             </Select>
           </label>
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <Preview kind="cliff" angle={angle} shape={settings.shape} size={56} />
-            <span>Left and right are as seen with the drop facing you. A drop facing away shows only the rim.</span>
-          </div>
+          <p className="text-xs text-muted">Left and right are as seen with the drop facing you. A drop facing away shows only the rim.</p>
         </>
       )}
     </div>
@@ -194,12 +200,18 @@ export function IconsPanel({ kind, onKind, settings, onSettings, selected, selec
             <KindButton key={k} kind={k} active={kind === k} onClick={() => onKind(k)} />
           ))}
         </div>
+        <h2 className="label-caps mb-2 mt-4 text-muted">Water</h2>
+        <div className="grid grid-cols-4 gap-1">
+          {WATER.map((k) => (
+            <KindButton key={k} kind={k} active={kind === k} onClick={() => onKind(k)} />
+          ))}
+        </div>
       </section>
       <section className="px-4 py-4">
         <h2 className="label-caps mb-3 text-muted">New {KINDS[kind].label.toLowerCase()}</h2>
         <Settings kind={kind} settings={settings} onChange={onSettings} />
         <p className="mt-3 text-xs text-muted">
-          With Place, click the map to place one. With Select, click any icon, the app&apos;s own hills, mountains and plants included, to move, resize or delete it; it then stays as you leave it.
+          With Place, click the map to place one. With Select, click any icon, a biome&apos;s plants and the waterfalls on rivers included, to move, resize or delete it; it then stays as you leave it.
           {KINDS[kind].group === 'terrain' && ' Terrain icons shape the ground around them, and stay where you put them.'}
         </p>
       </section>

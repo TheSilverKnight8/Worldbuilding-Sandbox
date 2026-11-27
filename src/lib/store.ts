@@ -7,7 +7,7 @@ import { DEFAULT_CELLS, elevationFromBlob, elevationToBlob, generateGraph, graph
 import { DEFAULT_LAND_ELEVATION } from './map/terrain';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
-import { metaOf, type BiomeFields, type IconSet, type MapInfo, type PlacedIcon, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
+import { metaOf, type BiomeFields, type IconSet, type MapInfo, type PlacedIcon, type River, type WorldBlob, type WorldDoc, type WorldMeta } from './world/types';
 
 export interface SaveStatus {
   state: 'saved' | 'saving' | 'error';
@@ -454,6 +454,7 @@ export async function setupMap(widthKm: number, heightKm: number): Promise<Resul
     elevationBlob: `${landBlob}-elevation`,
     icons: [],
     hiddenAuto: [],
+    rivers: [],
   };
   try {
     // The polygons are written once, now; land and biomes save with the world from here on.
@@ -527,6 +528,11 @@ export function deleteBiome(id: string) {
 // ---------------------------------------------------------------- icons placed by hand (Stage 4)
 
 /** Replaces the open map's placed icons (placing, moving, editing, deleting all go through here; undo keeps the arrays). */
+/** Sets the map's rivers. */
+export function setRivers(rivers: River[]) {
+  updateWorld((d) => (d.map ? { ...d, map: { ...d.map, rivers } } : d));
+}
+
 /** Sets the icons placed by hand, and (if given) the keys of the app's own icons that were taken over. */
 export function setPlacedIcons(icons: PlacedIcon[], hiddenAuto?: string[]) {
   updateWorld((d) => (d.map ? { ...d, map: { ...d.map, icons, hiddenAuto: hiddenAuto ?? d.map.hiddenAuto } } : d));

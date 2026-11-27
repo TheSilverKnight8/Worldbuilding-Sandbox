@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Hand, Layers, Maximize, PaintBucket, Paintbrush, Redo2, Undo2 } from 'lucide-react';
 import { Input, Kbd, Segmented, cx } from '../components/ui';
-import { emitMap, getMap, mapEdited, setPlacedIcons } from '../lib/store';
+import { emitMap, getMap, mapEdited, setPlacedIcons, setRivers } from '../lib/store';
 import { mapStyleFor } from '../lib/session';
 import { newId } from '../lib/ids';
 import { biomeFields, slotLooks, type SlotLook } from '../lib/map/biomes';
@@ -9,13 +9,15 @@ import type { Graph } from '../lib/map/graph';
 import { MapPainter, type Brush, type ElevationOp, type PaintMode } from '../lib/map/paint';
 import { OVERLAY, type MapStyle } from '../lib/map/render';
 import { variantsOf, type Placement } from '../lib/map/icons';
+import { defaultRiverWidth, smooth } from '../lib/map/rivers';
 import { ELEVATION_MAX, KINDS } from '../lib/map/terrain';
-import type { IconKind, MapInfo, PlacedIcon, WorldDoc } from '../lib/world/types';
+import type { IconKind, MapInfo, PlacedIcon, River, WorldDoc } from '../lib/world/types';
 import { BiomePanel } from './BiomePanel';
 import { IconsPanel, type IconSettings } from './IconsPanel';
-import { MapCanvas, type Hover, type IconTool, type MapCanvasHandle, type Tool } from './MapCanvas';
+import { MapCanvas, type Hover, type IconTool, type MapCanvasHandle, type RiverTool, type Tool } from './MapCanvas';
+import { RiversPanel } from './RiversPanel';
 
-type Mode = PaintMode | 'icons';
+type Mode = PaintMode | 'rivers' | 'icons';
 
 const km = (n: number) => `${Math.round(n).toLocaleString()} km`;
 /** A size in km: whole km above 10, one decimal below. */
@@ -70,7 +72,7 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
 
   const biomeSlot = biomeId ? Math.max(0, map.biomeSlots.indexOf(biomeId)) : 0;
   const brush: Brush = useMemo(
-    () => ({ mode: mode === 'icons' ? 'land' : mode, land, biomeSlot, op, meters: op === 'set' ? setMeters : stepMeters, radius }),
+    () => ({ mode: mode === 'icons' || mode === 'rivers' ? 'land' : mode, land, biomeSlot, op, meters: op === 'set' ? setMeters : stepMeters, radius }),
     [mode, land, biomeSlot, op, setMeters, stepMeters, radius],
   );
 
@@ -80,7 +82,7 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
     (k: IconKind): IconSettings => ({
       sizeKm: KINDS[k].size * graph.spacing * kmPerUnit,
       meters: KINDS[k].meters?.value,
-      angle: KINDS[k].rotatable ? 180 : undefined,
+      angle: KINDS[k].directional ? 180 : undefined,
       shape: k === 'cliff' ? 'even' : undefined,
     }),
     [graph.spacing, kmPerUnit],
@@ -113,7 +115,7 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
     (x: number, y: number) => {
       const icon: PlacedIcon = { id: newId(), kind: iconKind, x, y, size: Math.max(0.05, iconSettings.sizeKm / kmPerUnit), variant: Math.floor(Math.random() * variantsOf(iconKind)) };
       if (iconSettings.meters !== undefined && KINDS[iconKind].meters) icon.meters = iconSettings.meters;
-      if (KINDS[iconKind].rotatable) icon.angle = iconSettings.angle ?? 180;
+      if (KINDS[iconKind].directional) icon.angle = iconSettings.angle ?? 180;
       if (iconKind === 'cliff') icon.shape = iconSettings.shape ?? 'even';
       changeIcons([...map.icons, icon]);
       setSelectedIcon(icon.id);
@@ -142,19 +144,62 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
   }, [selectedIcon, map.icons, changeIcons]);
 
   const selectedSettings: IconSettings | null = selected
-    ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle ?? (KINDS[selected.kind].rotatable ? 180 : undefined), shape: selected.shape }
+    ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle ?? (KINDS[selected.kind].directional ? 180 : undefined), shape: selected.shape }
     : null;
   const editSelected = (s: IconSettings) => {
     if (!selected) return;
     const next: PlacedIcon = { ...selected, size: Math.max(0.05, s.sizeKm / kmPerUnit) };
     if (KINDS[selected.kind].meters && s.meters !== undefined) next.meters = s.meters;
-    if (KINDS[selected.kind].rotatable) next.angle = s.angle ?? 180;
+    if (KINDS[selected.kind].directional) next.angle = s.angle ?? 180;
     if (selected.kind === 'cliff') next.shape = s.shape ?? 'even';
     changeIcons(
       map.icons.map((i) => (i.id === selected.id ? next : i)),
       `edit ${selected.id}`,
     );
   };
+
+  // ------------------------------------------------------------ rivers
+
+  const [riverTool, setRiverTool] = useState<RiverTool>('draw');
+  const [selectedRiver, setSelectedRiver] = useState<string | null>(null);
+  const [newRiverKm, setNewRiverKm] = useState(() => Math.round(defaultRiverWidth(graph.spacing) * kmPerUnit * 10) / 10);
+  const river = selectedRiver ? (map.rivers.find((r) => r.id === selectedRiver) ?? null) : null;
+  useEffect(() => {
+    if (selectedRiver && !river) setSelectedRiver(null);
+  }, [selectedRiver, river]);
+  useEffect(() => {
+    if (mode !== 'rivers') setSelectedRiver(null);
+  }, [mode]);
+
+  /** Changes the rivers and adds the change to the undo history. */
+  const changeRivers = useCallback(
+    (next: River[], key?: string) => {
+      const before = map.rivers;
+      setRivers(next);
+      painter.push({ undo: () => setRivers(before), redo: () => setRivers(next), key });
+    },
+    [map.rivers, painter],
+  );
+  const addRiver = useCallback(
+    (points: [number, number][]) => {
+      const r: River = { id: newId(), points, width: Math.max(0.01, newRiverKm / kmPerUnit) };
+      changeRivers([...map.rivers, r]);
+      setSelectedRiver(r.id);
+    },
+    [map.rivers, changeRivers, newRiverKm, kmPerUnit],
+  );
+  const deleteRiver = useCallback(() => {
+    if (!selectedRiver) return;
+    changeRivers(map.rivers.filter((r) => r.id !== selectedRiver));
+    setSelectedRiver(null);
+  }, [selectedRiver, map.rivers, changeRivers]);
+  const riverLengthKm = (() => {
+    if (!river) return 0;
+    const pts = smooth(river.points);
+    let s = 0;
+    for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    return s * kmPerUnit;
+  })();
 
   // ------------------------------------------------------------ picking and keys
 
@@ -195,7 +240,13 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
       else if (mode === 'icons' && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         deleteSelected();
-      } else if (e.key === 'Escape') setSelectedIcon(null);
+      } else if (mode === 'rivers' && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        deleteRiver();
+      } else if (e.key === 'Escape') {
+        setSelectedIcon(null);
+        setSelectedRiver(null);
+      }
       else if (k === 'b') setTool('brush');
       else if (k === 'f') setTool('fill');
       else if (k === 'h') setTool('hand');
@@ -207,7 +258,7 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [painter, mode, deleteSelected]);
+  }, [painter, mode, deleteSelected, deleteRiver]);
 
   // Fill has nothing to do in Elevation mode.
   useEffect(() => {
@@ -231,6 +282,7 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
               { value: 'land', label: 'Land & water' },
               { value: 'biome', label: 'Biomes' },
               { value: 'elevation', label: 'Elevation' },
+              { value: 'rivers', label: 'Rivers' },
               { value: 'icons', label: 'Icons' },
             ]}
           />
@@ -275,7 +327,21 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
               {(op === 'raise' || op === 'lower') && <MetersInput label="Per dab" value={stepMeters} min={1} max={3000} onChange={setStepMeters} />}
             </>
           )}
-          {mode === 'icons' ? (
+          {mode === 'rivers' ? (
+            <>
+              <Segmented<RiverTool>
+                value={riverTool}
+                onChange={setRiverTool}
+                size="sm"
+                options={[
+                  { value: 'draw', label: 'Draw', title: 'Drag to draw a river from its source to its mouth' },
+                  { value: 'route', label: 'Route downhill', title: 'Click where a river starts: the app runs it downhill' },
+                  { value: 'select', label: 'Select', title: 'Click a river to select it' },
+                ]}
+              />
+              <span className="text-sm text-muted">{riverTool === 'draw' ? 'Drag from the source to the mouth.' : riverTool === 'route' ? 'Click where the river starts.' : 'Click a river to select it.'}</span>
+            </>
+          ) : mode === 'icons' ? (
             <>
               <Segmented<IconTool>
                 value={iconTool}
@@ -341,9 +407,15 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
             overlay={overlay}
             iconMode={mode === 'icons'}
             iconTool={iconTool}
+            rivers={map.rivers}
+            riverMode={mode === 'rivers'}
+            riverTool={riverTool}
+            selectedRiver={selectedRiver}
+            onAddRiver={addRiver}
+            onSelectRiver={setSelectedRiver}
             selectedIcon={selectedIcon}
             brush={brush}
-            tool={mode === 'icons' ? 'brush' : tool}
+            tool={mode === 'icons' || mode === 'rivers' ? 'brush' : tool}
             painter={painter}
             onHover={setHover}
             onPick={pick}
@@ -415,7 +487,20 @@ export function MapEditor({ world, map, graph }: { world: WorldDoc; map: MapInfo
         </div>
       </div>
 
-      {mode === 'icons' ? (
+      {mode === 'rivers' ? (
+        <RiversPanel
+          tool={riverTool}
+          newWidthKm={newRiverKm}
+          onNewWidthKm={setNewRiverKm}
+          selected={river}
+          selectedLengthKm={riverLengthKm}
+          kmPerUnit={kmPerUnit}
+          onWidth={(km) => river && changeRivers(map.rivers.map((r) => (r.id === river.id ? { ...r, width: Math.max(0.01, km / kmPerUnit) } : r)), `width ${river.id}`)}
+          onFlip={() => river && changeRivers(map.rivers.map((r) => (r.id === river.id ? { ...r, points: [...r.points].reverse() } : r)))}
+          onDelete={deleteRiver}
+          onDeselect={() => setSelectedRiver(null)}
+        />
+      ) : mode === 'icons' ? (
         <IconsPanel
           kind={iconKind}
           onKind={(k) => {

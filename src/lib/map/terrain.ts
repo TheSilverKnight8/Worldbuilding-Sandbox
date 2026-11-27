@@ -1,4 +1,5 @@
 import type { CliffShape, IconKind, PlacedIcon, TerrainKind } from '../world/types';
+import type { Dir } from './art/cliff';
 import { cellAt, cellsNear, type Graph } from './graph';
 
 // Elevation (Stage 4). The ground has a painted base elevation (meters, land only; the
@@ -13,10 +14,10 @@ type Effect = 'raise' | 'flat' | 'step' | 'none';
 
 export interface KindInfo {
   label: string;
-  group: 'terrain' | 'plants';
+  group: 'terrain' | 'plants' | 'water';
   effect: Effect;
-  /** Cliffs have a direction. */
-  rotatable: boolean;
+  /** Cliffs and waterfalls face one of 8 directions. */
+  directional: boolean;
   /** What the meters mean, and the default. */
   meters?: { label: string; value: number };
   /** Default width in cell spacings. */
@@ -30,25 +31,29 @@ export interface KindInfo {
  * 2.75-spacing mountain.
  */
 export const KINDS: Record<IconKind, KindInfo> = {
-  mountain: { label: 'Mountain', group: 'terrain', effect: 'raise', rotatable: false, meters: { label: 'Peak', value: 2500 }, size: 5.5 },
-  hill: { label: 'Hill', group: 'terrain', effect: 'raise', rotatable: false, meters: { label: 'Top', value: 700 }, size: 2.8 },
-  volcano: { label: 'Volcano', group: 'terrain', effect: 'raise', rotatable: false, meters: { label: 'Peak', value: 3000 }, size: 5.8 },
-  plateau: { label: 'Plateau', group: 'terrain', effect: 'flat', rotatable: false, meters: { label: 'Top', value: 1200 }, size: 6 },
-  cliff: { label: 'Cliff', group: 'terrain', effect: 'step', rotatable: true, meters: { label: 'Drop', value: 300 }, size: 4.2 },
-  deciduous: { label: 'Leafy tree', group: 'plants', effect: 'none', rotatable: false, size: 0.55 },
-  pine: { label: 'Pine tree', group: 'plants', effect: 'none', rotatable: false, size: 0.6 },
-  jungle: { label: 'Palm tree', group: 'plants', effect: 'none', rotatable: false, size: 0.58 },
-  cactus: { label: 'Cactus', group: 'plants', effect: 'none', rotatable: false, size: 0.48 },
-  shrub: { label: 'Shrub', group: 'plants', effect: 'none', rotatable: false, size: 0.37 },
-  grass: { label: 'Grass', group: 'plants', effect: 'none', rotatable: false, size: 0.36 },
-  dunes: { label: 'Dunes', group: 'plants', effect: 'none', rotatable: false, size: 1.2 },
-  reeds: { label: 'Reeds', group: 'plants', effect: 'none', rotatable: false, size: 0.43 },
+  mountain: { label: 'Mountain', group: 'terrain', effect: 'raise', directional: false, meters: { label: 'Peak', value: 2500 }, size: 5.5 },
+  hill: { label: 'Hill', group: 'terrain', effect: 'raise', directional: false, meters: { label: 'Top', value: 700 }, size: 2.8 },
+  volcano: { label: 'Volcano', group: 'terrain', effect: 'raise', directional: false, meters: { label: 'Peak', value: 3000 }, size: 5.8 },
+  plateau: { label: 'Plateau', group: 'terrain', effect: 'flat', directional: false, meters: { label: 'Top', value: 1200 }, size: 6 },
+  cliff: { label: 'Cliff', group: 'terrain', effect: 'step', directional: true, meters: { label: 'Drop', value: 300 }, size: 4.2 },
+  deciduous: { label: 'Leafy tree', group: 'plants', effect: 'none', directional: false, size: 0.55 },
+  pine: { label: 'Pine tree', group: 'plants', effect: 'none', directional: false, size: 0.6 },
+  jungle: { label: 'Palm tree', group: 'plants', effect: 'none', directional: false, size: 0.58 },
+  cactus: { label: 'Cactus', group: 'plants', effect: 'none', directional: false, size: 0.48 },
+  shrub: { label: 'Shrub', group: 'plants', effect: 'none', directional: false, size: 0.37 },
+  grass: { label: 'Grass', group: 'plants', effect: 'none', directional: false, size: 0.36 },
+  dunes: { label: 'Dunes', group: 'plants', effect: 'none', directional: false, size: 1.2 },
+  reeds: { label: 'Reeds', group: 'plants', effect: 'none', directional: false, size: 0.43 },
+  waterfall: { label: 'Waterfall', group: 'water', effect: 'none', directional: true, size: 1.5 },
 };
 
 export const isTerrain = (k: IconKind): k is TerrainKind => KINDS[k].group === 'terrain';
 
 /** A cliff's direction is the compass direction its drop faces (180 = south, toward the viewer); its drawing is turned by that minus 180. */
-export const cliffTurn = (icon: { angle?: number }) => (icon.angle ?? 180) - 180;
+/** The nearest of the 8 compass directions to an icon's angle (0 N, 1 NE ... 7 NW); each has its own drawing. */
+export const dirOf = (icon: { angle?: number }) => ((((Math.round((icon.angle ?? 180) / 45) % 8) + 8) % 8) as Dir);
+/** How far a cliff is turned from facing south, in degrees (the nearest of the 8 directions). */
+export const cliffTurn = (icon: { angle?: number }) => dirOf(icon) * 45 - 180;
 
 /** How a cliff's drop changes along its length (u from -0.5 at its left end to 0.5 at its right, seen with the drop toward the viewer). */
 function cliffAlong(shape: CliffShape | undefined, u: number) {
@@ -67,14 +72,14 @@ const smoothstep = (a: number, b: number, x: number) => {
 
 /** Where an icon's effect on the ground is centered: a little above its ground point, under the middle of the drawing. */
 function effectCenter(icon: PlacedIcon) {
-  return KINDS[icon.kind].rotatable ? { x: icon.x, y: icon.y } : { x: icon.x, y: icon.y - icon.size * 0.22 };
+  return KINDS[icon.kind].effect === 'step' ? { x: icon.x, y: icon.y } : { x: icon.x, y: icon.y - icon.size * 0.22 };
 }
 
 /** How far an icon's effect reaches, in map units. */
 export function effectRadius(icon: PlacedIcon) {
   const info = KINDS[icon.kind];
   if (info.effect === 'none') return 0;
-  if (info.rotatable) return icon.size * 0.6;
+  if (info.effect === 'step') return icon.size * 0.6;
   if (info.effect === 'flat') return icon.size * 0.8;
   return icon.size * 0.75;
 }

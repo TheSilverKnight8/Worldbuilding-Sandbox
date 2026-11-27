@@ -4,6 +4,7 @@ import type { Coast } from './coast';
 import type { Graph } from './graph';
 import { beginIconFrame, iconSprite, minPixels, placementLook, type IconStyle, type Placement } from './icons';
 import type { NoisyEdges } from './noisy';
+import type { RiverShape } from './rivers';
 import { PAPER_TILE_PIXELS, PAPER_TILE_UNITS, paperTexture } from './paper';
 
 // Draws the map with the browser's 2D canvas, in map units, in one of two looks:
@@ -29,6 +30,8 @@ export type MapStyle = IconStyle;
 
 export const ATLAS = {
   ink: '#3b2f22',
+  /** A river's water between its ink banks: the sea's tone over the paper. */
+  riverWater: '#dccbaa',
   /**
    * Multiplied over the paper. Matched to Caleb's own Nortantis map: the sea pale (about
    * #d8c5a6 there) and the land a darker olive tan (about #b7a97e).
@@ -47,6 +50,8 @@ export const ATLAS = {
 };
 
 export const PAINTERLY = {
+  /** A river's banks; its water is the sea's blue. */
+  riverBank: 'rgba(38, 56, 72, 0.75)',
   /** Open sea, and the lighter water along the coast (Caleb: blue on the painterly map). */
   sea: '#7ea6c6',
   shallows: 'rgba(196, 222, 236, 0.55)',
@@ -78,6 +83,7 @@ export interface Scene {
   heights: Int16Array;
   /** Draw the elevation overlay (height colors and contour lines). */
   overlay: boolean;
+  rivers: RiverShape[];
   noisy: NoisyEdges;
 }
 
@@ -187,6 +193,14 @@ export class MapRenderer {
       ctx.save();
       ctx.clip(rect);
       this.drawOverlay(view, dpr, scene, land);
+      ctx.restore();
+    }
+
+    if (scene.rivers.length) {
+      // Rivers stop at the shore: they are drawn on land only (so also not across a lake).
+      ctx.save();
+      ctx.clip(land, 'evenodd');
+      this.drawRivers(view, dpr, scene, style);
       ctx.restore();
     }
 
@@ -484,6 +498,38 @@ export class MapRenderer {
   }
 
   /**
+   * Rivers, widening toward their mouths: on the atlas, water-colored channels between ink
+   * banks (thin ones are just an ink line); on the painterly map, blue between darker banks.
+   * The banks of every river are drawn first and the water after, so rivers that join run
+   * into each other without a line across.
+   */
+  private drawRivers(view: View, dpr: number, scene: Scene, style: MapStyle) {
+    const ctx = this.ctx;
+    const s = view.scale * dpr;
+    ctx.setTransform(s, 0, 0, s, view.x * dpr, view.y * dpr);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const bank = style === 'atlas' ? ATLAS.ink : PAINTERLY.riverBank;
+    const water = style === 'atlas' ? ATLAS.riverWater : PAINTERLY.sea;
+    // A bank line about 0.9 screen pixels, at least.
+    const edge = Math.max(0.9 / s, 0.12);
+    for (const pass of ['bank', 'water'] as const) {
+      ctx.strokeStyle = pass === 'bank' ? bank : water;
+      for (const r of scene.rivers)
+        for (let i = 1; i < r.pts.length; i++) {
+          const w = (r.widths[i - 1] + r.widths[i]) / 2;
+          const lw = pass === 'bank' ? Math.max(w + edge * 2, 1.1 / s) : w;
+          if (pass === 'water' && w * s < 1.2) continue;
+          ctx.lineWidth = lw;
+          ctx.beginPath();
+          ctx.moveTo(r.pts[i - 1][0], r.pts[i - 1][1]);
+          ctx.lineTo(r.pts[i][0], r.pts[i][1]);
+          ctx.stroke();
+        }
+    }
+  }
+
+  /**
    * The icons, back to front, stamped in screen pixels from sprites made at the nearest size.
    * They are drawn on a layer of their own and laid over the map: on the atlas each icon's
    * mask first erases the icons behind it, so the land shows through its inside. With the
@@ -512,25 +558,11 @@ export class MapRenderer {
       const x = ox + p.x * s;
       const y = oy + p.y * s;
       if (x < -px * 1.3 || y < -px * 1.2 || x > cw + px * 1.3 || y > ch + px * 1.6) continue;
-      const { turn, look } = placementLook(p);
-      const sp = iconSprite(p.set, p.variant, style, px, look);
+      const sp = iconSprite(p.set, p.variant, style, px, placementLook(p));
       if (!sp) continue;
       const k = px / sp.w;
       const w = sp.canvas.width * k;
       const h = sp.canvas.height * k;
-      if (turn) {
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate((turn * Math.PI) / 180);
-        if (sp.mask && px >= 10) {
-          ctx.globalCompositeOperation = 'destination-out';
-          ctx.drawImage(sp.mask, -sp.ax * k, -sp.ay * k, w, h);
-          ctx.globalCompositeOperation = 'source-over';
-        }
-        ctx.drawImage(sp.canvas, -sp.ax * k, -sp.ay * k, w, h);
-        ctx.restore();
-        continue;
-      }
       const left = x - sp.ax * k;
       const top = y - sp.ay * k;
       if (sp.mask && px >= 10) {

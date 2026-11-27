@@ -7,14 +7,17 @@ import { buildCoast, type Coast } from '../lib/map/coast';
 import { cellAt, type Graph } from '../lib/map/graph';
 import { iconBox, iconHit, minPixels, onSpritesReady, placeIcons, placementLook, variantsOf, type Placement } from '../lib/map/icons';
 import { NoisyEdges } from '../lib/map/noisy';
+import { riverAt, riverShapes, riverWaterfalls, routeRiver, simplify, snapToRivers, underRivers } from '../lib/map/rivers';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
 import { computeHeights, underTerrain } from '../lib/map/terrain';
-import type { PlacedIcon } from '../lib/world/types';
+import type { PlacedIcon, River } from '../lib/world/types';
 
 export type Tool = 'brush' | 'fill' | 'hand';
 /** In Icons mode: place new icons, or select any icon (the app's own ones included). */
 export type IconTool = 'place' | 'select';
+/** In Rivers mode: draw a river by hand, click a source to route one downhill, or select one. */
+export type RiverTool = 'draw' | 'route' | 'select';
 
 /** What is under the cursor: map position (map units), the cell, and what is there. */
 export interface Hover {
@@ -45,6 +48,14 @@ interface Props {
   /** Icons mode: clicks place and select icons instead of painting. */
   iconMode: boolean;
   iconTool: IconTool;
+  rivers: River[];
+  /** Rivers mode: clicks draw, route and select rivers instead of painting. */
+  riverMode: boolean;
+  riverTool: RiverTool;
+  selectedRiver: string | null;
+  /** A new river: its points from source to mouth, in map units. */
+  onAddRiver: (points: [number, number][]) => void;
+  onSelectRiver: (id: string | null) => void;
   selectedIcon: string | null;
   brush: Brush;
   tool: Tool;
@@ -63,6 +74,9 @@ const MAX_SCALE = 60;
 /** After zooming or panning stops for this long, the map is drawn again at full quality. */
 const SETTLE_MS = 110;
 
+/** A seed for the little wander of a river routed from (x, y), so routing the same spot twice comes out the same. */
+const mixRouteSeed = (x: number, y: number) => (Math.round(x * 1000) * 73856093) ^ (Math.round(y * 1000) * 19349663);
+
 /** An icon placed by hand, as the map draws it. */
 export function placedToPlacement(p: PlacedIcon): Placement {
   let variant = p.variant;
@@ -76,7 +90,7 @@ export function placedToPlacement(p: PlacedIcon): Placement {
 
 /** The map on screen, in the atlas or painterly look. */
 export function MapCanvas(props: Props) {
-  const { handle, graph, seed, style, looks, placed, hiddenAuto, overlay, iconMode, iconTool, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
+  const { handle, graph, seed, style, looks, placed, hiddenAuto, overlay, iconMode, iconTool, rivers, riverMode, riverTool, selectedRiver, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<MapRenderer | null>(null);
@@ -89,7 +103,7 @@ export function MapCanvas(props: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [hoverCell, setHoverCell] = useState(-1);
   const [space, setSpace] = useState(false);
-  const drag = useRef<{ kind: 'pan' | 'paint' | 'icon'; x: number; y: number; vx: number; vy: number; id?: string; ox?: number; oy?: number } | null>(null);
+  const drag = useRef<{ kind: 'pan' | 'paint' | 'icon' | 'river'; x: number; y: number; vx: number; vy: number; id?: string; ox?: number; oy?: number } | null>(null);
   /** While an icon is dragged: its new position (committed when the drag ends). */
   const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
   const noisy = useMemo(() => new NoisyEdges(graph, seed), [graph, seed]);
@@ -107,8 +121,11 @@ export function MapCanvas(props: Props) {
   const iconsStale = useRef(true);
   const shownIcons = useMemo(() => (moving ? placed.map((i) => (i.id === moving.id ? { ...i, x: moving.x, y: moving.y } : i)) : placed), [placed, moving]);
   const hidden = useMemo(() => new Set(hiddenAuto), [hiddenAuto]);
-  const live = useRef({ style, looks, placed: shownIcons, overlay, hidden });
-  live.current = { style, looks, placed: shownIcons, overlay, hidden };
+  const shapes = useMemo(() => riverShapes(rivers, graph.spacing), [rivers, graph]);
+  /** A river being drawn by hand (map units), until the pointer is let go. */
+  const [draft, setDraft] = useState<[number, number][] | null>(null);
+  const live = useRef({ style, looks, placed: shownIcons, overlay, hidden, shapes });
+  live.current = { style, looks, placed: shownIcons, overlay, hidden, shapes };
 
   const draw = useCallback(() => {
     const r = renderer.current;
@@ -124,17 +141,28 @@ export function MapCanvas(props: Props) {
       heightsStale.current = false;
     }
     if (iconsStale.current) {
-      const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, underTerrain(map.graph, l.placed), l.hidden);
+      // A biome's plants stay off terrain icons placed by hand and off the rivers.
+      const keepOff = underTerrain(map.graph, l.placed);
+      const wet = underRivers(map.graph, l.shapes);
+      for (let c = 0; c < keepOff.length; c++) keepOff[c] |= wet[c];
+      const all: Placement[] = placeIcons(map.graph, map.land, map.biome, l.looks, seed, keepOff, l.hidden);
+      // Waterfalls where rivers cross cliffs.
+      for (const w of riverWaterfalls(l.shapes, l.placed, l.hidden)) {
+        let h = 0;
+        for (let i = 0; i < w.key.length; i++) h = (h * 31 + w.key.charCodeAt(i)) | 0;
+        all.push({ x: w.x, y: w.y, size: w.size, set: 'waterfall', variant: Math.abs(h) % variantsOf('waterfall'), angle: w.angle, auto: w.key });
+      }
       for (const p of l.placed) all.push(placedToPlacement(p));
-      // Back to front by ground point.
-      all.sort((a, b) => a.y - b.y);
+      // Back to front by ground point (a waterfall's point is its lip, so it goes by its foot, in front of its cliff).
+      const depth = (p: Placement) => (p.set === 'waterfall' ? p.y + p.size * 0.7 : p.y);
+      all.sort((a, b) => depth(a) - depth(b));
       icons.current = all;
       iconsStale.current = false;
     }
     const v = viewRef.current;
     r.draw(
       v,
-      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: icons.current, heights: heights.current, overlay: l.overlay, noisy },
+      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: icons.current, heights: heights.current, overlay: l.overlay, noisy, rivers: l.shapes },
       l.style,
       painting.current,
     );
@@ -198,7 +226,7 @@ export function MapCanvas(props: Props) {
     heightsStale.current = true;
     iconsStale.current = true;
     drawSoon();
-  }, [shownIcons, hidden, drawSoon]);
+  }, [shownIcons, hidden, shapes, drawSoon]);
 
   // Icon drawings made in the background are ready: draw again.
   useEffect(() => {
@@ -302,6 +330,20 @@ export function MapCanvas(props: Props) {
       if (h) onPick(h);
       return;
     }
+    if (riverMode) {
+      const inside = p.x >= 0 && p.y >= 0 && p.x <= graph.width && p.y <= graph.height;
+      if (riverTool === 'select') props.onSelectRiver(riverAt(shapes, p.x, p.y, 5 / viewRef.current.scale));
+      else if (riverTool === 'route' && inside) {
+        const map = getMap();
+        const route = map && heights.current ? routeRiver(map.graph, map.land, heights.current, p.x, p.y, rivers, mixRouteSeed(p.x, p.y)) : null;
+        if (route) props.onAddRiver(route);
+      } else if (riverTool === 'draw' && inside) {
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        drag.current = { kind: 'river', x: e.clientX, y: e.clientY, vx: 0, vy: 0 };
+        setDraft([[p.x, p.y]]);
+      }
+      return;
+    }
     if (iconMode) {
       // The icon on top under the cursor: in Place, only icons placed by hand; in Select, any icon.
       let hit: Placement | null = null;
@@ -343,6 +385,14 @@ export function MapCanvas(props: Props) {
     const d = drag.current;
     if (!d) return;
     if (d.kind === 'pan') setView((v) => ({ ...v, x: d.vx + e.clientX - d.x, y: d.vy + e.clientY - d.y }));
+    else if (d.kind === 'river') {
+      const p = toMap(e.clientX, e.clientY);
+      setDraft((pts) => {
+        if (!pts) return pts;
+        const [lx, ly] = pts[pts.length - 1];
+        return Math.hypot(p.x - lx, p.y - ly) < graph.spacing * 0.25 ? pts : [...pts, [Math.max(0, Math.min(graph.width, p.x)), Math.max(0, Math.min(graph.height, p.y))]];
+      });
+    }
     else if (d.kind === 'icon' && d.id) {
       const p = toMap(e.clientX, e.clientY);
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) setMoving({ id: d.id, x: p.x + (d.ox ?? 0), y: p.y + (d.oy ?? 0) });
@@ -362,6 +412,12 @@ export function MapCanvas(props: Props) {
     } else if (d?.kind === 'icon' && moving) {
       props.onMoveIcon(moving.id, moving.x, moving.y);
       setMoving(null);
+    } else if (d?.kind === 'river' && draft) {
+      // A river drawn by hand: kept as drawn, with fewer points; it joins a river it ends on.
+      let length = 0;
+      for (let i = 1; i < draft.length; i++) length += Math.hypot(draft[i][0] - draft[i - 1][0], draft[i][1] - draft[i - 1][1]);
+      if (length >= graph.spacing * 1.5) props.onAddRiver(snapToRivers(simplify(draft, graph.spacing * 0.12), rivers, graph.spacing * 0.6));
+      setDraft(null);
     }
     drag.current = null;
   };
@@ -383,25 +439,29 @@ export function MapCanvas(props: Props) {
   }, [hoverShape, view]);
 
   const selected = selectedIcon ? shownIcons.find((i) => i.id === selectedIcon) : undefined;
-  // A dashed box around the selected icon's drawing, turned with it.
+  // A dashed line along the selected river.
+  const selectedShape = (() => {
+    const r = selectedRiver ? shapes.find((q) => q.id === selectedRiver) : undefined;
+    return r ? r.pts.map(([x, y]) => `${(view.x + x * view.scale).toFixed(1)},${(view.y + y * view.scale).toFixed(1)}`).join(' ') : null;
+  })();
+  // A dashed box around the selected icon's drawing.
   const selectedBox = (() => {
     if (!selected) return null;
     const q = placedToPlacement(selected);
-    const { turn, look } = placementLook(q);
-    const b = iconBox(q, look.away);
+    const b = iconBox(q, placementLook(q));
     const sx = view.x + q.x * view.scale;
     const sy = view.y + q.y * view.scale;
-    return { left: sx + b.left * view.scale, top: sy + b.top * view.scale, width: b.width * view.scale, height: b.height * view.scale, transform: turn ? `rotate(${turn} ${sx} ${sy})` : undefined };
+    return { left: sx + b.left * view.scale, top: sy + b.top * view.scale, width: b.width * view.scale, height: b.height * view.scale };
   })();
   const panning = tool === 'hand' || space;
-  const showBrush = cursor && !panning && !iconMode && tool === 'brush' && !error;
+  const showBrush = cursor && !panning && !iconMode && !riverMode && tool === 'brush' && !error;
 
   return (
     <div
       ref={box}
       className="relative h-full w-full touch-none overflow-hidden select-none"
       style={{
-        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : iconTool === 'select' ? 'default' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
+        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : riverMode ? (riverTool === 'select' ? 'default' : 'crosshair') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : iconTool === 'select' ? 'default' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -417,13 +477,18 @@ export function MapCanvas(props: Props) {
       <canvas ref={canvas} className="pointer-events-none absolute inset-0 h-full w-full origin-top-left" style={{ transform }} />
       <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden>
         {hoverOutline && <polygon points={hoverOutline} fill="none" stroke="#fc3f3f" strokeWidth={1.6} strokeLinejoin="round" data-testid="hover-cell" />}
+        {draft && draft.length > 1 && (
+          <polyline points={draft.map(([x, y]) => `${(view.x + x * view.scale).toFixed(1)},${(view.y + y * view.scale).toFixed(1)}`).join(' ')} fill="none" stroke="#002657" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" data-testid="river-draft" />
+        )}
+        {selectedShape && (
+          <polyline points={selectedShape} fill="none" stroke="#002657" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" data-testid="selected-river" />
+        )}
         {selectedBox && (
           <rect
             x={selectedBox.left}
             y={selectedBox.top}
             width={selectedBox.width}
             height={selectedBox.height}
-            transform={selectedBox.transform}
             fill="none"
             stroke="#002657"
             strokeWidth={1.5}
