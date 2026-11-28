@@ -9,7 +9,7 @@ import { cellAt, type Graph } from '../lib/map/graph';
 import { MapPainter, type Brush, type ElevationOp, type PaintMode } from '../lib/map/paint';
 import { OVERLAY, type MapStyle } from '../lib/map/render';
 import { variantsOf, type Placement } from '../lib/map/icons';
-import { defaultRiverWidth, smooth } from '../lib/map/rivers';
+import { defaultRiverWidth, riverLength } from '../lib/map/rivers';
 import { ELEVATION_MAX, KINDS, SIZED_BY_POLYGON, footOffset, iconCell, polygonScale } from '../lib/map/terrain';
 import { placedToPlacement } from '../lib/map/scene';
 import type { IconKind, MapInfo, PlacedIcon, River, WorldDoc } from '../lib/world/types';
@@ -213,8 +213,8 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
     [map.rivers, painter],
   );
   const addRiver = useCallback(
-    (points: [number, number][]) => {
-      const r: River = { id: newId(), points, width: Math.max(0.01, newRiverKm / kmPerUnit) };
+    (vertices: number[]) => {
+      const r: River = { id: newId(), vertices, width: Math.max(0.01, newRiverKm / kmPerUnit) };
       changeRivers([...map.rivers, r]);
       setSelectedRiver(r.id);
     },
@@ -225,13 +225,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
     changeRivers(map.rivers.filter((r) => r.id !== selectedRiver));
     setSelectedRiver(null);
   }, [selectedRiver, map.rivers, changeRivers]);
-  const riverLengthKm = (() => {
-    if (!river) return 0;
-    const pts = smooth(river.points);
-    let s = 0;
-    for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-    return s * kmPerUnit;
-  })();
+  const riverLengthKm = river ? riverLength(graph, river) * kmPerUnit : 0;
 
   // ------------------------------------------------------------ picking and keys
 
@@ -530,7 +524,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
           selectedLengthKm={riverLengthKm}
           kmPerUnit={kmPerUnit}
           onWidth={(km) => river && changeRivers(map.rivers.map((r) => (r.id === river.id ? { ...r, width: Math.max(0.01, km / kmPerUnit) } : r)), `width ${river.id}`)}
-          onFlip={() => river && changeRivers(map.rivers.map((r) => (r.id === river.id ? { ...r, points: [...r.points].reverse() } : r)))}
+          onFlip={() => river && changeRivers(map.rivers.map((r) => (r.id === river.id ? { ...r, vertices: [...r.vertices].reverse() } : r)))}
           onDelete={deleteRiver}
           onDeselect={() => setSelectedRiver(null)}
         />

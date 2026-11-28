@@ -99,17 +99,26 @@ export interface MapInfo {
    * is left out. Keys are made in lib/map/terrain.ts and lib/map/icons.ts.
    */
   hiddenAuto: string[];
-  /** Rivers (Stage 5), drawn by hand or routed downhill by the app, then stored as drawn. */
+  /** Rivers (Stage 5), drawn by hand or routed downhill by the app, along polygon borders. */
   rivers: River[];
 }
 
-/** A river: a line from its source to its mouth. It widens toward the mouth, and below where other rivers join it. */
+/**
+ * A river: it runs along the borders between polygons (format 7), from its source to its
+ * mouth. It widens toward the mouth, and below where other rivers join it.
+ */
 export interface River {
   id: string;
-  /** From the source to the mouth: x, y in map units (smoothed when drawn). */
-  points: [number, number][];
+  /** Its chain of polygon corners (vertex indices of the map's graph), from source to mouth: the borders it follows. */
+  vertices: number[];
   /** Its own width at the mouth, in map units (rivers joining it add to the width below them). */
   width: number;
+  /**
+   * Only on a river saved before rivers followed borders (format 6): its old line, x, y in map
+   * units, from source to mouth. When its map is opened it is moved onto the borders nearest
+   * this line, and this is dropped.
+   */
+  points?: [number, number][];
 }
 
 /** How a biome shows on the fantasy atlas (Stage 3): a set of icons drawn in code, or nothing. */

@@ -5,6 +5,7 @@ import { newId } from './ids';
 import { MAX_BIOMES, biomeRecord, seedBiomes, slotFor } from './map/biomes';
 import { DEFAULT_CELLS, elevationFromBlob, elevationToBlob, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
 import { GEN_BIOMES, type GeneratedMap } from './map/generate';
+import { fitRivers } from './map/rivers';
 import { DEFAULT_LAND_ELEVATION } from './map/terrain';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
@@ -218,6 +219,15 @@ export async function openWorld(id: string) {
         lostMap = true;
       }
     }
+    // Rivers follow polygon borders: ones saved before that (or with a gap) are fitted to this map's borders.
+    let riversFitted = false;
+    if (world.map && mapData && world.map.rivers.length) {
+      const fit = fitRivers(mapData.graph, mapData.land, world.map.rivers);
+      if (fit.changed) {
+        world = { ...world, map: { ...world.map, rivers: fit.rivers } };
+        riversFitted = true;
+      }
+    }
     // A map from before Stage 3 gets the starter biomes, once.
     if (world.map && !world.map.biomesSeeded) {
       const s = seedBiomes(world, world.map);
@@ -227,7 +237,7 @@ export async function openWorld(id: string) {
     set({ open: { kind: 'ready', world }, save: { state: 'saved' } });
     emitMap('all');
     // A world saved by an older version of the app is saved again in the current format.
-    if (stored.version < FORMAT_VERSION || lostMap || seeded) markDirty();
+    if (stored.version < FORMAT_VERSION || lostMap || seeded || riversFitted) markDirty();
     if (lostMap) set({ notice: 'Part of this map’s stored data could not be read and was reset.' });
   } catch (e) {
     if (stale()) return;

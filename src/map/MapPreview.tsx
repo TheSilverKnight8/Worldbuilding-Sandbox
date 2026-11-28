@@ -17,7 +17,7 @@ export function MapPreview({ graph, seed, generated, style }: { graph: Graph; se
     const noisy = new NoisyEdges(graph, seed);
     // The generator paints with the starter biomes; slot n is GEN_BIOMES[n - 1].
     const looks = [null, ...GEN_BIOMES.map((name) => starterLook(name))];
-    const rivers = riverShapes(generated.rivers, graph.spacing);
+    const rivers = riverShapes(generated.rivers, graph, noisy);
     return {
       graph,
       land: generated.land,

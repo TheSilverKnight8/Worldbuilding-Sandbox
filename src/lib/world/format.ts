@@ -11,10 +11,13 @@ import { CLIFF_SHAPES, ICON_KINDS, RECORD_KINDS, type CliffShape, type FieldValu
 //   3  Stage 2: the polygon map (WorldDoc.map), with its polygons and land as blobs.
 //   4  Stage 3: biomes on the map (a biome grid blob and biome slots).
 //   5  Stage 4: elevation (a base elevation blob) and icons placed by hand.
-//   6  Stage 5: rivers.
+//   6  Stage 5: rivers (each a line of points).
+//   7  Rivers along polygon borders: each a chain of polygon corners. A river from format 6
+//      keeps its old line (`points`) until its map is opened, when it is moved onto the
+//      borders nearest it (that needs the map's polygons, which are stored apart).
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 6;
+export const FORMAT_VERSION = 7;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
@@ -49,6 +52,9 @@ function upgrade(raw: Record<string, unknown>, from: number): Record<string, unk
   }
   // 5 -> 6: a map gets no rivers yet.
   if (from < 6 && o.map) o = { ...o, map: { ...rec(o.map), rivers: [] } };
+  // Format 6 rivers were lines: kept as their `points`, with no corners yet (see above).
+  if (from < 7 && o.map && Array.isArray(rec(o.map).rivers))
+    o = { ...o, map: { ...rec(o.map), rivers: (rec(o.map).rivers as unknown[]).map((r) => ({ ...rec(r), vertices: [] })) } };
   return o;
 }
 
@@ -105,22 +111,28 @@ function readMap(v: unknown): MapInfo | null {
   };
 }
 
-/** Rivers that make sense: an ID, at least two points on the map, a width. Others are left out. */
+/**
+ * Rivers that make sense: an ID, a width, and a chain of at least two polygon corners (or,
+ * for a river from format 6 not yet moved onto borders, at least two points on the map).
+ * Others are left out. Whether the corners are on this map is checked when it is opened.
+ */
 function readRivers(v: unknown, w: number, h: number): River[] {
   if (!Array.isArray(v)) return [];
   const out: River[] = [];
   const ids = new Set<string>();
   for (const item of v.slice(0, 5000)) {
     const r = rec(item);
-    if (!isStr(r.id) || ids.has(r.id) || !isPos(r.width) || !Array.isArray(r.points)) continue;
+    if (!isStr(r.id) || ids.has(r.id) || !isPos(r.width)) continue;
+    const vertices = Array.isArray(r.vertices) ? (r.vertices as unknown[]).slice(0, 50000).filter((x): x is number => Number.isInteger(x) && (x as number) >= 0) : [];
     const points: [number, number][] = [];
-    for (const p of (r.points as unknown[]).slice(0, 20000)) {
-      if (!Array.isArray(p) || !isNum(p[0]) || !isNum(p[1])) continue;
-      points.push([Math.max(0, Math.min(w, p[0])), Math.max(0, Math.min(h, p[1]))]);
-    }
-    if (points.length < 2) continue;
+    if (vertices.length < 2 && Array.isArray(r.points))
+      for (const p of (r.points as unknown[]).slice(0, 20000)) {
+        if (!Array.isArray(p) || !isNum(p[0]) || !isNum(p[1])) continue;
+        points.push([Math.max(0, Math.min(w, p[0])), Math.max(0, Math.min(h, p[1]))]);
+      }
+    if (vertices.length < 2 && points.length < 2) continue;
     ids.add(r.id);
-    out.push({ id: r.id, points, width: r.width });
+    out.push(vertices.length >= 2 ? { id: r.id, vertices, width: r.width } : { id: r.id, vertices: [], width: r.width, points });
   }
   return out;
 }

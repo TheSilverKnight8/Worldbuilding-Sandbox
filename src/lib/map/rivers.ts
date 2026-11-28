@@ -1,259 +1,449 @@
-import { mixSeed, seededRandom } from '../rng';
 import type { PlacedIcon, River } from '../world/types';
-import { across, cellAt, cellsNear, type Graph } from './graph';
+import { cellAt, cellsNear, type Graph } from './graph';
+import type { NoisyEdges } from './noisy';
 import { KINDS, cliffTurn, dirOf } from './terrain';
 
-// Rivers (Stage 5). Caleb draws a river by hand, exactly where he wants it, or clicks a
-// source and the app routes it downhill over the heightmap to the sea, a lake or the map's
-// edge (Caleb: both). Either way it is stored as a line from source to mouth and drawn as a
-// river that widens toward its mouth, and below where other rivers join it. Where a river
-// crosses a cliff whose drop faces the viewer, a waterfall appears.
+// Rivers (Stage 5; along polygon borders since Caleb asked for it after Stage 7, as in
+// Nortantis). A river runs along the borders between polygons, from corner to corner, and is
+// drawn along the same wiggly lines as the coasts (noisy edges). It is stored as its chain of
+// corners, from source to mouth. Caleb draws a river by hand (snapped to the borders nearest
+// the stroke) or clicks a source and the app routes it downhill (Caleb: both). It ends at the
+// coast (of the sea or a lake), the map's edge, or a corner of another river, which it joins.
+// Where a river crosses a cliff, a waterfall appears.
 
 type Pt = [number, number];
 
-// ------------------------------------------------------------------ routing downhill
+// ------------------------------------------------------------------ the polygons' corners
 
-const drainCache = new WeakMap<Int16Array, Int32Array>();
+/** The corners of the polygons, and how they connect (worked out once per map). */
+export interface Corners {
+  count: number;
+  /** Each corner's neighbors along an edge, and that edge: next/edge[start[v] .. start[v + 1]). */
+  start: Int32Array;
+  next: Int32Array;
+  edge: Int32Array;
+  /** The cells around each corner, up to 4 (-1 for none). */
+  cells: Int32Array;
+  /** 1 for corners on the map's edge. */
+  border: Uint8Array;
+}
 
-/**
- * Where water on each land cell flows next: the neighbor it drains to, -1 when it drains
- * into water next door, -2 when it drains off the map's edge. Worked out by flooding the
- * land up from every outlet (water and the map's edge), lowest first: a cell is reached from
- * the lowest way out, so water flows downhill, out of hollows over their lowest rim, and
- * across flat land toward the nearest outlet.
- */
-export function drainage(g: Graph, land: Uint8Array, heights: Int16Array): Int32Array {
-  const hit = drainCache.get(heights);
-  if (hit && hit.length === g.cellCount) return hit;
-  const down = new Int32Array(g.cellCount).fill(-3);
-  const filled = new Float32Array(g.cellCount);
-  // A small binary heap of cells by (filled height, order reached).
-  const heap: number[] = [];
-  const keyH: number[] = [];
-  const keyO: number[] = [];
-  let order = 0;
-  const less = (i: number, j: number) => keyH[i] < keyH[j] || (keyH[i] === keyH[j] && keyO[i] < keyO[j]);
-  const push = (c: number, h: number) => {
-    heap.push(c);
-    keyH.push(h);
-    keyO.push(order++);
-    let i = heap.length - 1;
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (!less(i, p)) break;
-      [heap[i], heap[p]] = [heap[p], heap[i]];
-      [keyH[i], keyH[p]] = [keyH[p], keyH[i]];
-      [keyO[i], keyO[p]] = [keyO[p], keyO[i]];
-      i = p;
+const cornersCache = new WeakMap<Graph, Corners>();
+
+export function corners(g: Graph): Corners {
+  const hit = cornersCache.get(g);
+  if (hit) return hit;
+  const count = g.vertices.length / 2;
+  const start = new Int32Array(count + 1);
+  for (let e = 0; e < g.edgeCount; e++) {
+    start[g.edges[e * 4] + 1]++;
+    start[g.edges[e * 4 + 1] + 1]++;
+  }
+  for (let v = 0; v < count; v++) start[v + 1] += start[v];
+  const fill = start.slice(0, count);
+  const next = new Int32Array(start[count]);
+  const edge = new Int32Array(start[count]);
+  const cells = new Int32Array(count * 4).fill(-1);
+  const border = new Uint8Array(count);
+  const addCell = (v: number, c: number) => {
+    if (c < 0) return;
+    for (let k = 0; k < 4; k++) {
+      if (cells[v * 4 + k] === c) return;
+      if (cells[v * 4 + k] < 0) return void (cells[v * 4 + k] = c);
     }
   };
-  const pop = () => {
-    const top = heap[0];
-    const last = heap.length - 1;
-    heap[0] = heap[last];
-    keyH[0] = keyH[last];
-    keyO[0] = keyO[last];
-    heap.pop();
-    keyH.pop();
-    keyO.pop();
+  for (let e = 0; e < g.edgeCount; e++) {
+    const a = g.edges[e * 4];
+    const b = g.edges[e * 4 + 1];
+    next[fill[a]] = b;
+    edge[fill[a]++] = e;
+    next[fill[b]] = a;
+    edge[fill[b]++] = e;
+    for (const v of [a, b]) {
+      addCell(v, g.edges[e * 4 + 2]);
+      addCell(v, g.edges[e * 4 + 3]);
+      if (g.edges[e * 4 + 3] < 0) border[v] = 1;
+    }
+  }
+  const out = { count, start, next, edge, cells, border };
+  cornersCache.set(g, out);
+  return out;
+}
+
+const cx = (g: Graph, v: number) => g.vertices[v * 2];
+const cy = (g: Graph, v: number) => g.vertices[v * 2 + 1];
+
+/** What is around a corner: 0 only water, 1 only land, 2 both (the coast). */
+function cornerKind(k: Corners, land: Uint8Array, v: number) {
+  let l = 0;
+  let w = 0;
+  for (let i = 0; i < 4; i++) {
+    const c = k.cells[v * 4 + i];
+    if (c < 0) continue;
+    if (land[c]) l++;
+    else w++;
+  }
+  return l && w ? 2 : l ? 1 : 0;
+}
+
+/** The edge between two neighboring corners, or -1. */
+function edgeBetween(k: Corners, a: number, b: number) {
+  for (let i = k.start[a]; i < k.start[a + 1]; i++) if (k.next[i] === b) return k.edge[i];
+  return -1;
+}
+
+/** The corner nearest map point (x, y) among the corners of the cell there (-1 off the map). */
+function nearestCorner(g: Graph, x: number, y: number, ok: (v: number) => boolean = () => true) {
+  const c = cellAt(g, x, y);
+  if (c < 0) return -1;
+  let best = -1;
+  let bd = Infinity;
+  for (let i = g.cellEdgeStart[c]; i < g.cellEdgeStart[c + 1]; i++) {
+    const e = g.cellEdges[i];
+    for (const v of [g.edges[e * 4], g.edges[e * 4 + 1]]) {
+      if (!ok(v)) continue;
+      const d = Math.hypot(cx(g, v) - x, cy(g, v) - y);
+      if (d < bd) {
+        bd = d;
+        best = v;
+      }
+    }
+  }
+  return best;
+}
+
+/** The shortest way along borders from corner a to corner b (both included), over corners `ok` allows; null if none within `limit` map units. */
+export function pathBetween(g: Graph, k: Corners, a: number, b: number, ok: (v: number) => boolean, limit: number): number[] | null {
+  if (a === b) return [a];
+  const dist = new Map<number, number>([[a, 0]]);
+  const prev = new Map<number, number>();
+  const heap = new MinHeap();
+  heap.push(0, a);
+  while (heap.size) {
+    const [d, v] = heap.pop();
+    if (v === b) break;
+    if (d > (dist.get(v) ?? Infinity) || d > limit) continue;
+    for (let i = k.start[v]; i < k.start[v + 1]; i++) {
+      const n = k.next[i];
+      if (n !== b && !ok(n)) continue;
+      const nd = d + Math.hypot(cx(g, n) - cx(g, v), cy(g, n) - cy(g, v));
+      if (nd < (dist.get(n) ?? Infinity)) {
+        dist.set(n, nd);
+        prev.set(n, v);
+        heap.push(nd, n);
+      }
+    }
+  }
+  if (!prev.has(b)) return null;
+  const out = [b];
+  for (let v = b; v !== a; ) {
+    v = prev.get(v)!;
+    out.push(v);
+  }
+  return out.reverse();
+}
+
+/** A binary heap of (key, value), smallest key first; equal keys in the order pushed. */
+class MinHeap {
+  private k: number[] = [];
+  private o: number[] = [];
+  private v: number[] = [];
+  private order = 0;
+  get size() {
+    return this.k.length;
+  }
+  private less(i: number, j: number) {
+    return this.k[i] < this.k[j] || (this.k[i] === this.k[j] && this.o[i] < this.o[j]);
+  }
+  private swap(i: number, j: number) {
+    [this.k[i], this.k[j]] = [this.k[j], this.k[i]];
+    [this.o[i], this.o[j]] = [this.o[j], this.o[i]];
+    [this.v[i], this.v[j]] = [this.v[j], this.v[i]];
+  }
+  push(key: number, value: number) {
+    this.k.push(key);
+    this.o.push(this.order++);
+    this.v.push(value);
+    let i = this.k.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!this.less(i, p)) break;
+      this.swap(i, p);
+      i = p;
+    }
+  }
+  pop(): [number, number] {
+    const top: [number, number] = [this.k[0], this.v[0]];
+    const last = this.k.length - 1;
+    this.swap(0, last);
+    this.k.pop();
+    this.o.pop();
+    this.v.pop();
     let i = 0;
     for (;;) {
       const l = i * 2 + 1;
       const r = l + 1;
       let m = i;
-      if (l < heap.length && less(l, m)) m = l;
-      if (r < heap.length && less(r, m)) m = r;
+      if (l < this.k.length && this.less(l, m)) m = l;
+      if (r < this.k.length && this.less(r, m)) m = r;
       if (m === i) break;
-      [heap[i], heap[m]] = [heap[m], heap[i]];
-      [keyH[i], keyH[m]] = [keyH[m], keyH[i]];
-      [keyO[i], keyO[m]] = [keyO[m], keyO[i]];
+      this.swap(i, m);
       i = m;
     }
     return top;
-  };
-  // Outlets: land next to water, and land on the map's edge.
-  for (let c = 0; c < g.cellCount; c++) {
-    if (!land[c]) continue;
-    let out = -3;
-    for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1]; k++) {
-      const n = across(g, g.cellEdges[k], c);
-      if (n < 0) out = out === -1 ? -1 : -2;
-      else if (!land[n]) out = -1;
-    }
-    if (out === -3) continue;
-    down[c] = out;
-    filled[c] = heights[c];
-    push(c, heights[c]);
   }
-  while (heap.length) {
-    const c = pop();
-    for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1]; k++) {
-      const n = across(g, g.cellEdges[k], c);
-      if (n < 0 || !land[n] || down[n] !== -3) continue;
-      down[n] = c;
-      filled[n] = Math.max(heights[n], filled[c]);
-      push(n, filled[n]);
+}
+
+// ------------------------------------------------------------------ routing downhill
+
+/** Each corner's height: the average of the land cells around it. */
+export function cornerHeights(g: Graph, land: Uint8Array, heights: ArrayLike<number>): Float32Array {
+  const k = corners(g);
+  const out = new Float32Array(k.count);
+  for (let v = 0; v < k.count; v++) {
+    let s = 0;
+    let n = 0;
+    for (let i = 0; i < 4; i++) {
+      const c = k.cells[v * 4 + i];
+      if (c >= 0 && land[c]) {
+        s += heights[c];
+        n++;
+      }
+    }
+    out[v] = n ? s / n : 0;
+  }
+  return out;
+}
+
+const drainCache = new WeakMap<ArrayLike<number>, Int32Array>();
+
+/**
+ * Where water at each corner flows next, along a border: the neighboring corner it drains
+ * to; -1 at a corner on the coast (it reaches the water there); -2 at a corner on the map's
+ * edge; -3 for corners in the water. Worked out by flooding up from the coast and the map's
+ * edge, lowest first: water runs downhill, out of hollows over their lowest rim, and across
+ * flat land toward the nearest way out.
+ */
+export function drainage(g: Graph, land: Uint8Array, heights: ArrayLike<number>): Int32Array {
+  const hit = drainCache.get(heights);
+  const k = corners(g);
+  if (hit && hit.length === k.count) return hit;
+  const h = cornerHeights(g, land, heights);
+  const down = new Int32Array(k.count).fill(-3);
+  const filled = new Float32Array(k.count);
+  const heap = new MinHeap();
+  for (let v = 0; v < k.count; v++) {
+    const kind = cornerKind(k, land, v);
+    if (kind === 2) down[v] = -1;
+    else if (kind === 1 && k.border[v]) down[v] = -2;
+    else continue;
+    filled[v] = h[v];
+    heap.push(h[v], v);
+  }
+  while (heap.size) {
+    const [, v] = heap.pop();
+    for (let i = k.start[v]; i < k.start[v + 1]; i++) {
+      const n = k.next[i];
+      if (down[n] !== -3 || cornerKind(k, land, n) !== 1) continue;
+      down[n] = v;
+      filled[n] = Math.max(h[n], filled[v]);
+      heap.push(filled[n], n);
     }
   }
   drainCache.set(heights, down);
   return down;
 }
 
-/** The middle of the edge between cell c and its neighbor n (n = -1: water; -2: the map's edge). */
-export function outletPoint(g: Graph, land: Uint8Array, c: number, kind: number): Pt {
-  for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1]; k++) {
-    const e = g.cellEdges[k];
-    const n = across(g, e, c);
-    if ((kind === -1 && n >= 0 && !land[n]) || (kind === -2 && n < 0)) {
-      const v0 = g.edges[e * 4];
-      const v1 = g.edges[e * 4 + 1];
-      return [(g.vertices[v0 * 2] + g.vertices[v1 * 2]) / 2, (g.vertices[v0 * 2 + 1] + g.vertices[v1 * 2 + 1]) / 2];
-    }
-  }
-  return [g.centers[c * 2], g.centers[c * 2 + 1]];
-}
-
-/** The nearest point to (x, y) on a polyline, its distance, and how far along the line it is. */
-function nearestOn(pts: Pt[], x: number, y: number) {
-  let best = { d: Infinity, x: 0, y: 0, s: 0 };
-  let run = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const [ax, ay] = pts[i - 1];
-    const [bx, by] = pts[i];
-    const dx = bx - ax;
-    const dy = by - ay;
-    const len2 = dx * dx + dy * dy || 1e-9;
-    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2));
-    const px = ax + dx * t;
-    const py = ay + dy * t;
-    const d = Math.hypot(x - px, y - py);
-    if (d < best.d) best = { d, x: px, y: py, s: run + Math.sqrt(len2) * t };
-    run += Math.sqrt(len2);
-  }
-  return best;
-}
-
 /**
- * A river routed downhill from map point (x, y): from cell to cell along the way water
- * drains, until it reaches water, the map's edge, or another river (which it joins). The
- * line wanders a little between cell centers, the same every time for the same `seed`.
- * Null if (x, y) is not on land.
+ * A river routed downhill from map point (x, y): from the nearest corner, along the borders
+ * water drains by, to the coast, the map's edge, or a corner of another river (which it
+ * joins). Null if (x, y) is not on land.
  */
-export function routeRiver(g: Graph, land: Uint8Array, heights: Int16Array, x: number, y: number, others: River[], seed: number): Pt[] | null {
-  let c = cellAt(g, x, y);
+export function routeRiver(g: Graph, land: Uint8Array, heights: ArrayLike<number>, x: number, y: number, others: River[]): number[] | null {
+  const c = cellAt(g, x, y);
   if (c < 0 || !land[c]) return null;
+  const k = corners(g);
   const down = drainage(g, land, heights);
-  const rand = seededRandom(mixSeed(seed, 0x7a11));
-  const shapes = others.map((r) => smooth(r.points));
-  const join = g.spacing * 0.7;
-  const pts: Pt[] = [[x, y]];
-  for (let steps = 0; steps < g.cellCount; steps++) {
-    const next = down[c];
-    if (next < 0) {
-      pts.push(outletPoint(g, land, c, next));
-      break;
-    }
-    c = next;
-    const cx = g.centers[c * 2];
-    const cy = g.centers[c * 2 + 1];
-    // Reaching another river: join it there.
-    let joined: Pt | null = null;
-    for (const s of shapes) {
-      const n = nearestOn(s, cx, cy);
-      if (n.d < join) joined = [n.x, n.y];
-    }
-    if (joined) {
-      pts.push(joined);
-      break;
-    }
-    pts.push([cx, cy]);
+  let v = nearestCorner(g, x, y, (n) => down[n] >= 0 || down[n] === -1 || down[n] === -2);
+  if (v < 0) return null;
+  const taken = new Set<number>();
+  for (const r of others) for (const n of r.vertices) taken.add(n);
+  const path = [v];
+  for (let steps = 0; steps < k.count && down[v] >= 0 && !taken.has(v); steps++) {
+    v = down[v];
+    path.push(v);
   }
-  // Wander a little across the line between cell centers (not at the ends).
-  for (let i = 1; i < pts.length - 1; i++) {
-    const [ax, ay] = pts[i - 1];
-    const [bx, by] = pts[i + 1];
-    const len = Math.hypot(bx - ax, by - ay) || 1;
-    const off = (rand() - 0.5) * g.spacing * 0.35;
-    pts[i] = [pts[i][0] - ((by - ay) / len) * off, pts[i][1] + ((bx - ax) / len) * off];
-  }
-  return pts.length >= 2 ? pts : null;
+  return path.length >= 2 ? path : null;
 }
 
 // ------------------------------------------------------------------ lines drawn by hand
 
-/** Fewer points along a hand-drawn line, keeping its shape (Ramer-Douglas-Peucker). */
-export function simplify(pts: Pt[], tolerance: number): Pt[] {
-  if (pts.length < 3) return pts.slice();
-  const keep = new Uint8Array(pts.length);
-  keep[0] = keep[pts.length - 1] = 1;
-  const stack: [number, number][] = [[0, pts.length - 1]];
-  while (stack.length) {
-    const [a, b] = stack.pop()!;
-    const [ax, ay] = pts[a];
-    const [bx, by] = pts[b];
-    const len = Math.hypot(bx - ax, by - ay) || 1e-9;
-    let worst = -1;
-    let at = -1;
-    for (let i = a + 1; i < b; i++) {
-      const d = Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / len;
-      if (d > worst) {
-        worst = d;
-        at = i;
+/**
+ * A line (drawn by hand, or a river saved before rivers followed borders) moved onto the
+ * borders nearest it: the corners it passes, joined along borders where it skips one,
+ * without loops. It starts on land and ends at the first coast it reaches; it joins another
+ * river at the first corner it shares with one, or at one within `joinWithin` of its end.
+ */
+export function snapLine(g: Graph, land: Uint8Array, pts: Pt[], others: River[], joinWithin: number): number[] | null {
+  const k = corners(g);
+  const onLand = (v: number) => cornerKind(k, land, v) !== 0;
+  // Points every third of a cell along the line, and the corner nearest each.
+  const step = g.spacing * 0.3;
+  const seq: number[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[Math.min(pts.length - 1, i + 1)];
+    const n = i === pts.length - 1 ? 1 : Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+    for (let j = 0; j < n; j++) {
+      const v = nearestCorner(g, ax + ((bx - ax) * j) / n, ay + ((by - ay) * j) / n);
+      if (v >= 0 && v !== seq[seq.length - 1]) seq.push(v);
+    }
+  }
+  // Start on land.
+  while (seq.length && !onLand(seq[0])) seq.shift();
+  if (seq.length < 2) return null;
+  // Along borders, corner to corner.
+  let path: number[] = [seq[0]];
+  for (let i = 1; i < seq.length; i++) {
+    const last = path[path.length - 1];
+    if (seq[i] === last) continue;
+    if (edgeBetween(k, last, seq[i]) >= 0) path.push(seq[i]);
+    else {
+      const way = pathBetween(g, k, last, seq[i], onLand, g.spacing * 4);
+      if (way) path.push(...way.slice(1));
+    }
+  }
+  // No loops: a corner passed twice cuts out what was between.
+  const seen = new Map<number, number>();
+  const plain: number[] = [];
+  for (const v of path) {
+    const at = seen.get(v);
+    if (at !== undefined) {
+      for (const u of plain.splice(at + 1)) seen.delete(u);
+      continue;
+    }
+    seen.set(v, plain.length);
+    plain.push(v);
+  }
+  path = plain;
+  // It ends at the first coast after its start (the sea, or a lake), or before the water.
+  for (let i = 1; i < path.length; i++) {
+    const kind = cornerKind(k, land, path[i]);
+    if (kind === 2) {
+      path = path.slice(0, i + 1);
+      break;
+    }
+    if (kind === 0) {
+      path = path.slice(0, i);
+      break;
+    }
+  }
+  // Joining another river: at the first corner it shares with one, or at one near its end.
+  const taken = new Set<number>();
+  for (const r of others) for (const v of r.vertices) taken.add(v);
+  const shared = path.findIndex((v, i) => i > 0 && taken.has(v));
+  if (shared > 0) path = path.slice(0, shared + 1);
+  else if (taken.size && cornerKind(k, land, path[path.length - 1]) === 1) {
+    const end = path[path.length - 1];
+    let best = -1;
+    let bd = joinWithin;
+    for (const v of taken) {
+      const d = Math.hypot(cx(g, v) - cx(g, end), cy(g, v) - cy(g, end));
+      if (d < bd) {
+        bd = d;
+        best = v;
       }
     }
-    if (worst > tolerance && at > 0) {
-      keep[at] = 1;
-      stack.push([a, at], [at, b]);
+    if (best >= 0) {
+      const way = pathBetween(g, k, end, best, (v) => onLand(v) && !path.includes(v), g.spacing * 3);
+      if (way) path.push(...way.slice(1));
     }
   }
-  return pts.filter((_, i) => keep[i]);
+  return path.length >= 2 ? path : null;
 }
 
-/** A hand-drawn river's end joins another river when it stops close to one. */
-export function snapToRivers(pts: Pt[], others: River[], within: number): Pt[] {
-  if (pts.length < 2) return pts;
-  const [x, y] = pts[pts.length - 1];
-  let best: { d: number; x: number; y: number } | null = null;
-  for (const r of others) {
-    const n = nearestOn(smooth(r.points), x, y);
-    if (n.d < within && (!best || n.d < best.d)) best = n;
+/**
+ * Rivers as they should be on this map: each a chain of neighboring corners. A river saved
+ * before rivers followed borders (only its old line, `points`) is moved onto the borders
+ * nearest it; a chain with a gap is joined up along borders; rivers that cannot be fitted
+ * are left out. `changed` says whether anything was done.
+ */
+export function fitRivers(g: Graph, land: Uint8Array, rivers: River[]): { rivers: River[]; changed: boolean } {
+  const k = corners(g);
+  const out: River[] = [];
+  let changed = false;
+  // Rivers already on borders first, so old ones can join them.
+  const order = [...rivers].sort((a, b) => Number(a.vertices.length < 2) - Number(b.vertices.length < 2));
+  for (const r of order) {
+    if (r.vertices.length >= 2 && r.vertices.every((v) => Number.isInteger(v) && v >= 0 && v < k.count)) {
+      let path: number[] = [r.vertices[0]];
+      let ok = true;
+      for (let i = 1; i < r.vertices.length; i++) {
+        const a = path[path.length - 1];
+        const b = r.vertices[i];
+        if (a === b) continue;
+        if (edgeBetween(k, a, b) >= 0) path.push(b);
+        else {
+          const way = pathBetween(g, k, a, b, () => true, g.spacing * 6);
+          if (!way) {
+            ok = false;
+            break;
+          }
+          path.push(...way.slice(1));
+          changed = true;
+        }
+      }
+      if (ok && path.length >= 2) {
+        out.push(path.length === r.vertices.length && !r.points ? r : { id: r.id, vertices: path, width: r.width });
+        if (r.points) changed = true;
+        continue;
+      }
+    }
+    changed = true;
+    if (!r.points || r.points.length < 2) continue;
+    const path = snapLine(g, land, r.points, out, g.spacing * 0.6);
+    if (path) out.push({ id: r.id, vertices: path, width: r.width });
   }
-  return best ? [...pts.slice(0, -1), [best.x, best.y]] : pts;
+  // Keep the rivers in the order they were made.
+  const index = new Map(rivers.map((r, i) => [r.id, i]));
+  out.sort((a, b) => index.get(a.id)! - index.get(b.id)!);
+  return { rivers: out, changed };
 }
 
 // ------------------------------------------------------------------ drawing
 
-/** Rounds a river's corners (keeps its ends). */
-export function smooth(pts: Pt[]): Pt[] {
-  let p = pts;
-  for (let t = 0; t < 2; t++) {
-    if (p.length < 3) return p;
-    const out: Pt[] = [p[0]];
-    for (let i = 0; i < p.length - 1; i++) {
-      const [x0, y0] = p[i];
-      const [x1, y1] = p[i + 1];
-      if (i > 0) out.push([x0 * 0.75 + x1 * 0.25, y0 * 0.75 + y1 * 0.25]);
-      if (i < p.length - 2) out.push([x0 * 0.25 + x1 * 0.75, y0 * 0.25 + y1 * 0.75]);
+/** A river's line: along each border it follows, as the coasts are drawn (wiggly). Also where each corner falls along it (index into the points). */
+export function riverLine(g: Graph, noisy: NoisyEdges, vertices: number[]): { pts: Pt[]; at: number[] } {
+  const k = corners(g);
+  const pts: Pt[] = [[cx(g, vertices[0]), cy(g, vertices[0])]];
+  const at = [0];
+  for (let i = 1; i < vertices.length; i++) {
+    const a = vertices[i - 1];
+    const b = vertices[i];
+    const e = edgeBetween(k, a, b);
+    if (e < 0) pts.push([cx(g, b), cy(g, b)]);
+    else {
+      const line = noisy.get(e);
+      const forward = g.edges[e * 4] === a;
+      const n = line.length / 2;
+      for (let j = 1; j < n; j++) {
+        const q = forward ? j : n - 1 - j;
+        pts.push([line[q * 2], line[q * 2 + 1]]);
+      }
     }
-    out.push(p[p.length - 1]);
-    p = out;
+    at.push(pts.length - 1);
   }
-  return p;
+  return { pts, at };
 }
 
-/** Splits long straight stretches into short ones, so a river's width can change along them (its taper, and where others join it). */
-function resample(pts: Pt[], step: number): Pt[] {
-  const out: Pt[] = [pts[0]];
-  for (let i = 1; i < pts.length; i++) {
-    const [ax, ay] = pts[i - 1];
-    const [bx, by] = pts[i];
-    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
-    for (let k = 1; k <= n; k++) out.push([ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n]);
-  }
-  return out;
+/** A river's length along its borders (straight from corner to corner), in map units. */
+export function riverLength(g: Graph, r: River) {
+  let s = 0;
+  for (let i = 1; i < r.vertices.length; i++) s += Math.hypot(cx(g, r.vertices[i]) - cx(g, r.vertices[i - 1]), cy(g, r.vertices[i]) - cy(g, r.vertices[i - 1]));
+  return s;
 }
 
-/** A river ready to draw: its smoothed line and its width at each point, in map units. */
+/** A river ready to draw: its line and its width at each point, in map units. */
 export interface RiverShape {
   id: string;
   pts: Pt[];
@@ -264,52 +454,47 @@ export interface RiverShape {
 const taper = (t: number) => 0.25 + 0.75 * Math.pow(Math.max(0, Math.min(1, t)), 0.7);
 
 /**
- * The rivers as drawn: smoothed, each widening toward its mouth. A river whose mouth is on
- * another river joins it, and that river is wider below the join (widths add as areas do).
+ * The rivers as drawn: along their borders, each widening toward its mouth. A river whose
+ * mouth is a corner of another river joins it, and that river is wider below the join
+ * (widths add as areas do).
  */
-export function riverShapes(rivers: River[], spacing: number): RiverShape[] {
-  const lines = rivers.map((r) => resample(smooth(r.points), spacing * 0.5));
-  const lengths = lines.map((pts) => {
-    let s = 0;
-    for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+export function riverShapes(rivers: River[], g: Graph, noisy: NoisyEdges): RiverShape[] {
+  const ok = rivers.filter((r) => r.vertices.length >= 2);
+  const lines = ok.map((r) => riverLine(g, noisy, r.vertices));
+  const runs = lines.map(({ pts }) => {
+    const s = [0];
+    for (let i = 1; i < pts.length; i++) s.push(s[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
     return s;
   });
-  // Which river each one joins, and how far along it.
-  const joins: { into: number; s: number }[] = rivers.map(() => ({ into: -1, s: 0 }));
-  rivers.forEach((_, a) => {
-    const [x, y] = lines[a][lines[a].length - 1];
-    let best = { d: spacing * 0.35, into: -1, s: 0, x: 0, y: 0 };
-    rivers.forEach((__, b) => {
-      if (a === b) return;
-      const n = nearestOn(lines[b], x, y);
-      if (n.d < best.d) best = { d: n.d, into: b, s: n.s, x: n.x, y: n.y };
+  // Which river each one joins (its mouth is one of that river's corners), and how far along it.
+  const joins: { into: number; s: number }[] = ok.map(() => ({ into: -1, s: 0 }));
+  ok.forEach((r, a) => {
+    const mouth = r.vertices[r.vertices.length - 1];
+    ok.forEach((o, b) => {
+      if (a === b || joins[a].into >= 0) return;
+      const i = o.vertices.indexOf(mouth);
+      if (i > 0 || (i === 0 && o.vertices.length > 1 && i !== o.vertices.length - 1)) joins[a] = { into: b, s: runs[b][lines[b].at[i]] };
     });
-    if (best.into >= 0) {
-      joins[a] = { into: best.into, s: best.s };
-      lines[a][lines[a].length - 1] = [best.x, best.y];
-    }
   });
   // Each river's width at its mouth, with everything that joins it.
   const memo = new Map<number, number>();
   const full = (i: number, depth = 0): number => {
     if (memo.has(i)) return memo.get(i)!;
-    let w2 = rivers[i].width ** 2;
+    let w2 = ok[i].width ** 2;
     if (depth < 50) joins.forEach((j, k) => j.into === i && (w2 += full(k, depth + 1) ** 2));
     const w = Math.sqrt(w2);
     memo.set(i, w);
     return w;
   };
-  return rivers.map((r, i) => {
-    const pts = lines[i];
-    const L = lengths[i] || 1;
-    const widths: number[] = [];
-    let s = 0;
-    for (let k = 0; k < pts.length; k++) {
-      if (k) s += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
-      let w2 = (taper(s / L) * r.width) ** 2;
-      joins.forEach((j, t) => j.into === i && j.s <= s && (w2 += full(t) ** 2));
-      widths.push(Math.sqrt(w2));
-    }
+  return ok.map((r, i) => {
+    const { pts } = lines[i];
+    const run = runs[i];
+    const L = run[run.length - 1] || 1;
+    const widths = pts.map((_, k) => {
+      let w2 = (taper(run[k] / L) * r.width) ** 2;
+      joins.forEach((j, t) => j.into === i && j.s <= run[k] && (w2 += full(t) ** 2));
+      return Math.sqrt(w2);
+    });
     return { id: r.id, pts, widths };
   });
 }

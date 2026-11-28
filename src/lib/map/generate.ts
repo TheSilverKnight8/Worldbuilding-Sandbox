@@ -2,7 +2,7 @@ import { newId } from '../ids';
 import { mixSeed, seededRandom } from '../rng';
 import type { CliffShape, PlacedIcon, River, TerrainKind } from '../world/types';
 import { across, cellAt, cellsNear, type Graph } from './graph';
-import { drainage, outletPoint } from './rivers';
+import { corners, drainage } from './rivers';
 import { KINDS, cliffTurn, computeHeights, footOffset, polygonScale } from './terrain';
 
 // Random generation (Stage 6): a whole map made once, at setup, then edited by hand. It is
@@ -554,80 +554,112 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
     flowLand[c] = land[c] || isLake[c] ? 1 : 0;
     flowHeights[c] = isLake[c] ? lakeLevel[c] : heights[c];
   }
+  // ...along the borders between polygons, from corner to corner (rivers follow borders, as in Nortantis).
+  const K = corners(g);
+  const V = K.count;
   const down = drainage(g, flowLand, flowHeights);
-  const gathered = new Float32Array(N);
-  const into = new Int32Array(N);
+  // Rain falls on each polygon and is shared among its corners.
+  const gathered = new Float32Array(V);
   for (let c = 0; c < N; c++) {
     if (!flowLand[c]) continue;
-    gathered[c] = isLake[c] ? 0.6 : rain[c];
-    if (down[c] >= 0) into[down[c]]++;
+    const edges = g.cellEdgeStart[c + 1] - g.cellEdgeStart[c];
+    const share = (isLake[c] ? 0.6 : rain[c]) / edges / 2;
+    for (let e = g.cellEdgeStart[c]; e < g.cellEdgeStart[c + 1]; e++) {
+      gathered[g.edges[g.cellEdges[e] * 4]] += share;
+      gathered[g.edges[g.cellEdges[e] * 4 + 1]] += share;
+    }
   }
+  const into = new Int32Array(V);
+  for (let v = 0; v < V; v++) if (down[v] >= 0) into[down[v]]++;
   const queue: number[] = [];
-  for (let c = 0; c < N; c++) if (flowLand[c] && into[c] === 0) queue.push(c);
+  for (let v = 0; v < V; v++) if (down[v] !== -3 && into[v] === 0) queue.push(v);
   for (let q = 0; q < queue.length; q++) {
-    const c = queue[q];
-    const d = down[c];
+    const v = queue[q];
+    const d = down[v];
     if (d < 0) continue;
-    gathered[d] += gathered[c];
+    gathered[d] += gathered[v];
     if (--into[d] === 0) queue.push(d);
   }
   // A river where enough water has gathered: about twenty cells' worth of rain.
   const threshold = 22;
-  const isRiver = (c: number) => flowLand[c] === 1 && gathered[c] >= threshold;
+  const isRiver = (v: number) => down[v] !== -3 && gathered[v] >= threshold;
   const upstream = new Map<number, number[]>();
-  for (let c = 0; c < N; c++)
-    if (isRiver(c) && down[c] >= 0) {
-      const list = upstream.get(down[c]);
-      if (list) list.push(c);
-      else upstream.set(down[c], [c]);
+  for (let v = 0; v < V; v++)
+    if (isRiver(v) && down[v] >= 0) {
+      const list = upstream.get(down[v]);
+      if (list) list.push(v);
+      else upstream.set(down[v], [v]);
     }
   // Each river from its mouth (or where it joins a bigger one) up its largest branch to its source.
-  type Traced = { cells: number[]; join: number; mouthKind: number; tribs: number[] };
+  type Traced = { corners: number[]; join: number; tribs: number[] };
   const traced: Traced[] = [];
-  const traceFrom = (start: number, join: number, mouthKind: number) => {
-    const cells = [start];
+  const traceFrom = (start: number, join: number) => {
+    const path = [start];
     const tribs: number[] = [];
-    let c = start;
+    let v = start;
     for (;;) {
-      const ups = upstream.get(c);
+      const ups = upstream.get(v);
       if (!ups || !ups.length) break;
       let main = ups[0];
       for (const u of ups) if (gathered[u] > gathered[main]) main = u;
       for (const u of ups) if (u !== main) tribs.push(u);
-      c = main;
-      cells.push(c);
+      v = main;
+      path.push(v);
     }
-    traced.push({ cells: cells.reverse(), join, mouthKind, tribs });
+    traced.push({ corners: path.reverse(), join, tribs });
   };
-  for (let c = 0; c < N; c++) if (isRiver(c) && down[c] < 0) traceFrom(c, -1, down[c]);
-  for (let i = 0; i < traced.length; i++) for (const t of traced[i].tribs) traceFrom(t, down[t], 0);
+  for (let v = 0; v < V; v++) if (isRiver(v) && down[v] < 0) traceFrom(v, -1);
+  for (let i = 0; i < traced.length; i++) for (const t of traced[i].tribs) traceFrom(t, down[t]);
+  // Where a river reaches a lake it ends at the shore, and another starts where the water flows
+  // out (rather than running along the lake's edge, where it would show as a strip by the shore).
+  const touchesLake = (v: number) => {
+    for (let q = 0; q < 4; q++) if (K.cells[v * 4 + q] >= 0 && isLake[K.cells[v * 4 + q]]) return true;
+    return false;
+  };
+  const pieces: { corners: number[]; tribs: number[] }[] = [];
+  for (const t of traced) {
+    const path = t.join >= 0 ? [...t.corners, t.join] : t.corners;
+    let piece: number[] = [];
+    for (let i = 0; i < path.length; i++) {
+      const v = path[i];
+      if (!touchesLake(v)) {
+        piece.push(v);
+        continue;
+      }
+      // Into the lake: this piece ends at the shore; the next starts at the last shore corner before land again.
+      piece.push(v);
+      if (piece.length >= 2) pieces.push({ corners: piece, tribs: t.tribs });
+      let j = i;
+      while (j + 1 < path.length && touchesLake(path[j + 1])) j++;
+      piece = [path[j]];
+      i = j;
+    }
+    if (piece.length >= 2) pieces.push({ corners: piece, tribs: t.tribs });
+  }
   const rivers: River[] = [];
   let biggest = 0;
-  for (const t of traced) if (t.join < 0) biggest = Math.max(biggest, gathered[t.cells[t.cells.length - 1]]);
+  for (const p of pieces) biggest = Math.max(biggest, gathered[p.corners[p.corners.length - 1]]);
   const k = (sp * 0.45) / Math.sqrt(biggest || 1);
-  const kept = traced.filter((t) => t.cells.length >= (t.join < 0 ? 4 : 5));
-  const keptStart = new Set(kept.map((t) => t.cells[t.cells.length - 1]));
-  const wander = seededRandom(mixSeed(seed, 5));
-  for (const t of kept) {
-    const last = t.cells[t.cells.length - 1];
+  // Short ones are left out (a border is a little over half a cell long).
+  const kept = pieces.filter((p) => p.corners.length >= 6);
+  const keptMouths = new Set(kept.map((p) => p.corners[p.corners.length - 1]));
+  for (const p of kept) {
+    const last = p.corners[p.corners.length - 1];
     // The water it carries of its own: all that gathered at its mouth, less what the rivers joining it bring.
+    const on = new Set(p.corners.slice(0, -1));
     let own = gathered[last];
-    for (const u of t.tribs) if (keptStart.has(u)) own -= gathered[u];
-    const pts: [number, number][] = t.cells.map((c) => [cx(c), cy(c)]);
-    if (t.join >= 0) pts.push([cx(t.join), cy(t.join)]);
-    else pts.push(outletPoint(g, flowLand, last, t.mouthKind));
-    for (let i = 1; i < pts.length - 1; i++) {
-      const [ax, ay] = pts[i - 1];
-      const [bx, by] = pts[i + 1];
-      const len = Math.hypot(bx - ax, by - ay) || 1;
-      const off = (wander() - 0.5) * sp * 0.35;
-      pts[i] = [pts[i][0] - ((by - ay) / len) * off, pts[i][1] + ((bx - ax) / len) * off];
+    for (const q of kept) {
+      const m = q.corners[q.corners.length - 1];
+      if (q !== p && on.has(m) && keptMouths.has(m)) own -= gathered[q.corners[q.corners.length - 2]];
     }
-    rivers.push({ id: newId(), points: pts, width: Math.max(sp * 0.05, k * Math.sqrt(Math.max(own, 1))) });
+    rivers.push({ id: newId(), vertices: p.corners, width: Math.max(sp * 0.05, k * Math.sqrt(Math.max(own, 1))) });
   }
 
   // --- 6. Biomes
-  const nearWater = stepsFrom(g, nb, (c) => isLake[c] === 1 || (isRiver(c) && !isLake[c]));
+  // Polygons a river runs beside.
+  const byRiver = new Uint8Array(N);
+  for (const r of rivers) for (const v of r.vertices) for (let i = 0; i < 4; i++) if (K.cells[v * 4 + i] >= 0) byRiver[K.cells[v * 4 + i]] = 1;
+  const nearWater = stepsFrom(g, nb, (c) => isLake[c] === 1 || byRiver[c] === 1);
   const baseTemp = -6 + 40 * clamp(settings.climate, 0, 1);
   const spread = heightKm * 0.007;
   const swampy = gradientNoise(mixSeed(seed, 6));

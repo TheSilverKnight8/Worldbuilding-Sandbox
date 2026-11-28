@@ -7,7 +7,7 @@ import { buildCoast, type Coast } from '../lib/map/coast';
 import { cellAt, type Graph } from '../lib/map/graph';
 import { iconBox, iconHit, minPixels, onSpritesReady, placementLook, type Placement } from '../lib/map/icons';
 import { NoisyEdges } from '../lib/map/noisy';
-import { riverAt, riverShapes, routeRiver, simplify, snapToRivers, type RiverShape } from '../lib/map/rivers';
+import { riverAt, riverShapes, routeRiver, snapLine, type RiverShape } from '../lib/map/rivers';
 import { mapIcons, placedToPlacement } from '../lib/map/scene';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
@@ -55,7 +55,8 @@ interface Props {
   riverTool: RiverTool;
   selectedRiver: string | null;
   /** A new river: its points from source to mouth, in map units. */
-  onAddRiver: (points: [number, number][]) => void;
+  /** A new river: its chain of polygon corners, from source to mouth. */
+  onAddRiver: (vertices: number[]) => void;
   onSelectRiver: (id: string | null) => void;
   selectedIcon: string | null;
   brush: Brush;
@@ -76,7 +77,6 @@ const MAX_SCALE = 60;
 const SETTLE_MS = 110;
 
 /** A seed for the little wander of a river routed from (x, y), so routing the same spot twice comes out the same. */
-const mixRouteSeed = (x: number, y: number) => (Math.round(x * 1000) * 73856093) ^ (Math.round(y * 1000) * 19349663);
 
 export { placedToPlacement };
 
@@ -113,7 +113,7 @@ export function MapCanvas(props: Props) {
   const iconsStale = useRef(true);
   const shownIcons = useMemo(() => (moving ? placed.map((i) => (i.id === moving.id ? { ...i, x: moving.x, y: moving.y } : i)) : placed), [placed, moving]);
   const hidden = useMemo(() => new Set(hiddenAuto), [hiddenAuto]);
-  const shapes = useMemo(() => riverShapes(rivers, graph.spacing), [rivers, graph]);
+  const shapes = useMemo(() => riverShapes(rivers, graph, noisy), [rivers, graph, noisy]);
   /** A river being drawn by hand (map units), until the pointer is let go. */
   const [draft, setDraft] = useState<[number, number][] | null>(null);
   const live = useRef({ style, looks, placed: shownIcons, overlay, hidden, shapes });
@@ -325,7 +325,7 @@ export function MapCanvas(props: Props) {
       if (riverTool === 'select') props.onSelectRiver(riverAt(shapes, p.x, p.y, 5 / viewRef.current.scale));
       else if (riverTool === 'route' && inside) {
         const map = getMap();
-        const route = map && heights.current ? routeRiver(map.graph, map.land, heights.current, p.x, p.y, rivers, mixRouteSeed(p.x, p.y)) : null;
+        const route = map && heights.current ? routeRiver(map.graph, map.land, heights.current, p.x, p.y, rivers) : null;
         if (route) props.onAddRiver(route);
       } else if (riverTool === 'draw' && inside) {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -406,10 +406,12 @@ export function MapCanvas(props: Props) {
       props.onMoveIcon(moving.id, moving.x, moving.y);
       setMoving(null);
     } else if (d?.kind === 'river' && draft) {
-      // A river drawn by hand: kept as drawn, with fewer points; it joins a river it ends on.
+      // A river drawn by hand: moved onto the borders nearest the stroke; it joins a river it meets or ends near.
       let length = 0;
       for (let i = 1; i < draft.length; i++) length += Math.hypot(draft[i][0] - draft[i - 1][0], draft[i][1] - draft[i - 1][1]);
-      if (length >= graph.spacing * 1.5) props.onAddRiver(snapToRivers(simplify(draft, graph.spacing * 0.12), rivers, graph.spacing * 0.6));
+      const map = getMap();
+      const path = map && length >= graph.spacing * 1.5 ? snapLine(map.graph, map.land, draft, rivers, graph.spacing * 0.6) : null;
+      if (path) props.onAddRiver(path);
       setDraft(null);
     }
     drag.current = null;
