@@ -5,12 +5,13 @@ import { emitMap, getMap, mapEdited, setPlacedIcons, setRivers } from '../lib/st
 import { lookFor, onLookChange, setLook } from '../lib/session';
 import { newId } from '../lib/ids';
 import { biomeFields, slotLooks, type SlotLook } from '../lib/map/biomes';
-import type { Graph } from '../lib/map/graph';
+import { cellAt, type Graph } from '../lib/map/graph';
 import { MapPainter, type Brush, type ElevationOp, type PaintMode } from '../lib/map/paint';
 import { OVERLAY, type MapStyle } from '../lib/map/render';
 import { variantsOf, type Placement } from '../lib/map/icons';
 import { defaultRiverWidth, smooth } from '../lib/map/rivers';
-import { ELEVATION_MAX, KINDS } from '../lib/map/terrain';
+import { ELEVATION_MAX, KINDS, SIZED_BY_POLYGON, footOffset, iconCell, polygonScale } from '../lib/map/terrain';
+import { placedToPlacement } from '../lib/map/scene';
 import type { IconKind, MapInfo, PlacedIcon, River, WorldDoc } from '../lib/world/types';
 import { BiomePanel } from './BiomePanel';
 import { IconsPanel, type IconSettings } from './IconsPanel';
@@ -109,16 +110,46 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
     [map.icons, map.hiddenAuto, painter],
   );
 
+  /**
+   * Places an icon on the polygon clicked, as Nortantis does (Caleb): in the polygon's middle,
+   * one per polygon. If the polygon already has an icon standing on it, one of the same kind
+   * gets another drawing instead, and one of another kind is replaced. A polygon that a
+   * neighbor's icon only reaches over is free: the icon in front is drawn on top.
+   */
   const placeIcon = useCallback(
     (x: number, y: number) => {
-      const icon: PlacedIcon = { id: newId(), kind: iconKind, x, y, size: Math.max(0.05, iconSettings.sizeKm / kmPerUnit), variant: Math.floor(Math.random() * variantsOf(iconKind)) };
+      const c = cellAt(graph, x, y);
+      if (c < 0) return;
+      // The icon already standing on this polygon (the one in front, if there are several).
+      let there: PlacedIcon | null = null;
+      for (const i of map.icons) if (iconCell(graph, i) === c && (!there || i.y > there.y)) there = i;
+      if (there && there.kind === iconKind) {
+        const n = variantsOf(iconKind);
+        const now = placedToPlacement(there).variant;
+        const variant = n > 1 ? (now + 1 + Math.floor(Math.random() * (n - 1))) % n : now;
+        const id = there.id;
+        changeIcons(map.icons.map((i) => (i.id === id ? { ...i, variant } : i)));
+        setSelectedIcon(id);
+        return;
+      }
+      // Mountains, hills and volcanoes are sized by their polygon, around the width set in the panel.
+      const size = Math.max(0.05, (iconSettings.sizeKm / kmPerUnit) * (SIZED_BY_POLYGON.has(iconKind) ? polygonScale(graph)[c] : 1));
+      const icon: PlacedIcon = {
+        id: newId(),
+        kind: iconKind,
+        x: graph.centers[c * 2],
+        y: graph.centers[c * 2 + 1] + footOffset(iconKind, size, graph.spacing),
+        size,
+        variant: Math.floor(Math.random() * variantsOf(iconKind)),
+      };
       if (iconSettings.meters !== undefined && KINDS[iconKind].meters) icon.meters = iconSettings.meters;
       if (KINDS[iconKind].directional) icon.angle = iconSettings.angle ?? 180;
       if (iconKind === 'cliff') icon.shape = iconSettings.shape ?? 'even';
-      changeIcons([...map.icons, icon]);
+      const replaced = there?.id;
+      changeIcons([...(replaced ? map.icons.filter((i) => i.id !== replaced) : map.icons), icon]);
       setSelectedIcon(icon.id);
     },
-    [iconKind, iconSettings, kmPerUnit, map.icons, changeIcons],
+    [graph, iconKind, iconSettings, kmPerUnit, map.icons, changeIcons],
   );
 
   /** Takes over an icon the app drew by itself: it becomes an icon placed by hand, in the same spot, and the app's copy is left out. */
@@ -351,11 +382,11 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
                 onChange={setIconTool}
                 size="sm"
                 options={[
-                  { value: 'place', label: 'Place', title: 'Click the map to place an icon; click one you placed to select it' },
+                  { value: 'place', label: 'Place', title: 'Click a polygon to place an icon in its middle; clicking one that has an icon gives it another drawing' },
                   { value: 'select', label: 'Select', title: 'Click any icon to select it, the ones the app drew included' },
                 ]}
               />
-              <span className="text-sm text-muted">{iconTool === 'place' ? 'Click to place; drag an icon you placed to move it.' : 'Click any icon to select, move or resize it.'}</span>
+              <span className="text-sm text-muted">{iconTool === 'place' ? 'Click a polygon to place it there; click again for another drawing.' : 'Click any icon to select, move or resize it.'}</span>
             </>
           ) : (
             <>

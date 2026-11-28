@@ -3,7 +3,7 @@ import { mixSeed, seededRandom } from '../rng';
 import type { CliffShape, PlacedIcon, River, TerrainKind } from '../world/types';
 import { across, cellAt, cellsNear, type Graph } from './graph';
 import { drainage, outletPoint } from './rivers';
-import { KINDS, cliffTurn, computeHeights } from './terrain';
+import { KINDS, cliffTurn, computeHeights, footOffset, polygonScale } from './terrain';
 
 // Random generation (Stage 6): a whole map made once, at setup, then edited by hand. It is
 // the app's own code, using general techniques (none of Nortantis's code):
@@ -229,30 +229,6 @@ function onBorder(g: Graph, c: number) {
   return false;
 }
 
-/**
- * Each cell's size relative to the map's average, as Nortantis measures it (the width between
- * its east-most and west-most neighbors), stretched by 1.21 so sizes vary as much as there
- * (our polygons are evened out more), kept within 0.45 to 1.9. Mountains and hills are sized by it.
- */
-function cellSizeRatio(g: Graph, nb: Neighbors) {
-  const w = new Float32Array(g.cellCount);
-  let sum = 0;
-  for (let c = 0; c < g.cellCount; c++) {
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (let k = nb.start[c]; k < nb.start[c + 1]; k++) {
-      const x = g.centers[nb.list[k] * 2];
-      lo = Math.min(lo, x);
-      hi = Math.max(hi, x);
-    }
-    w[c] = hi > lo ? hi - lo : 0;
-    sum += w[c];
-  }
-  const mean = sum / g.cellCount || 1;
-  for (let c = 0; c < g.cellCount; c++) w[c] = clamp(1 + 1.21 * (w[c] / mean - 1), 0.45, 1.9);
-  return w;
-}
-
 // ------------------------------------------------------------------ the generator
 
 /**
@@ -455,7 +431,8 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
 
   // --- 4. Terrain icons, stored as if placed by hand.
   const icons: PlacedIcon[] = [];
-  const ratio = cellSizeRatio(g, nb);
+  // Mountains, hills and volcanoes are sized by their polygon (src/lib/map/terrain.ts).
+  const ratio = polygonScale(g);
   const covered = new Uint8Array(N);
   const variant = (kind: TerrainKind) => Math.floor(rand() * variants(kind));
   const cover = (x: number, y: number, r: number) => cellsNear(g, x, y, r, (c) => (covered[c] = 1));
@@ -512,7 +489,7 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
     const c = pick((c) => land[c] === 1 && !covered[c] && water[c] >= 2 && water[c] <= 8 && (ridge[c] > 0.3 || settings.shape === 'islands') && elevation[c] >= 300);
     if (c < 0) break;
     const size = KINDS.volcano.size * sp * ratio[c] * (0.85 + rand() * 0.3);
-    icons.push({ id: newId(), kind: 'volcano', x: cx(c), y: cy(c) + sp * 0.35, size, variant: variant('volcano'), meters: Math.max(elevation[c] + 600, 1800 + Math.round(rand() * 1500)) });
+    icons.push({ id: newId(), kind: 'volcano', x: cx(c), y: cy(c) + footOffset('volcano', size, sp), size, variant: variant('volcano'), meters: Math.max(elevation[c] + 600, 1800 + Math.round(rand() * 1500)) });
     cover(cx(c), cy(c), size * 0.45);
   }
   // Mountains and hills along the high ground, spaced across each range (as Nortantis does).

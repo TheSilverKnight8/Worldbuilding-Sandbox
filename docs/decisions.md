@@ -59,6 +59,9 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Kinds and types (Stage 7) | A starter list you can add to: a value typed in is offered afterwards in that world. |
 | Dates (Stage 7) | The real-world calendar to the day; years before 1 allowed (BC). |
 | Images (Stage 7) | A gallery with a cover. `SPEC.md` updated with these Stage 7 answers, at Caleb's request. |
+| Polygon sizes (after Stage 7) | More varied: as Nortantis's (one evening-out pass instead of two), for maps made from now on (each map keeps the polygons it was made with). |
+| Icon size and polygon size (after Stage 7) | Mountains, hills and volcanoes follow their polygon's size more strongly, and ones placed by hand are sized by their polygon too. |
+| Placing icons (after Stage 7) | As in Nortantis: an icon goes to the middle of the polygon clicked, one per polygon. Clicking a polygon that already has one rerolls its drawing; placing another kind there replaces it. A polygon that a neighbor's icon only reaches over can take its own, the one in front drawn on top. |
 | Rivers along polygon borders (asked during Stage 7) | All rivers follow polygon borders, with the coastline wiggle, as in Nortantis: routed and generated ones, and drawn ones snapped to the nearest borders. Rivers already saved move onto borders when a world opens. To do after Stage 7. |
 | Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
 
@@ -111,7 +114,7 @@ The spec left two things to this stage: the drawing technology and the number of
 | --- | --- | --- |
 | Size | Width and height in km, typed in; the area shows in km². Each side 10 to 40,000 km. The long side may be at most 4 times the short side. | Spec: size in km. Very long, thin maps would squash the polygons. |
 | New map | All water; Caleb draws the land. | Spec: start blank. (Random generation is Stage 6.) |
-| Polygons | **16,000 per map.** Random points, their Voronoi cells (d3-delaunay 6.0.6, ISC license), evened out with 2 rounds of Lloyd relaxation. Making them takes about half a second. | Nortantis allows 2,000 to 32,000; 16,000 is in the middle. Caleb to judge whether drawing feels fine enough. |
+| Polygons | **16,000 per map.** Random points, their Voronoi cells (d3-delaunay 6.0.6, ISC license), evened out with one round of Lloyd relaxation, as Nortantis does, so they vary in size as much as Nortantis's (spread 0.26; maps made before used two rounds, spread 0.22, and keep their polygons). Making them takes about half a second. | Nortantis allows 2,000 to 32,000; 16,000 is in the middle. Caleb to judge whether drawing feels fine enough. |
 | Stored polygons | The polygons themselves are stored with the world (about 1.15 MB), not a random seed. | Spec: later changes to the generator never change an existing map. |
 | Map units | Positions are in map units, with the long side 1,000 units. Kilometers come from the map's size. | Drawing and the polygons do not depend on the km size. |
 | Land | One byte per cell (land or water), saved with the world in the same step as the rest of it. | |
@@ -252,7 +255,7 @@ During Stage 4 the app drew hills (from 500 m) and mountains (from 1,500 m) by i
 | Item | Choice |
 | --- | --- |
 | Pick | Any terrain icon, or any plant or ground icon (the same drawings as the biome icons), from the panel on the right. The panel shows each one as drawn on the map. |
-| Place | With **Place**, click the map. The new icon is selected, so it can be adjusted at once. Clicking an icon placed by hand selects it instead. Each new icon gets one of its kind's drawings at random, and keeps it. |
+| Place | With **Place**, click a polygon (Caleb, as in Nortantis): the icon goes to its middle (a mountain's, hill's, volcano's or plateau's foot a little below, so it stands on the polygon), one per polygon. Clicking a polygon that already has an icon of that kind gives it another drawing; another kind replaces it. Which polygon an icon stands on is worked out from its foot. A polygon that a neighbor's icon only reaches over is free to take its own, and the icon in front (lower on the page) is drawn on top. The placed or rerolled icon is selected, so it can be adjusted at once. Each icon keeps its drawing. Mountains, hills and volcanoes are sized by their polygon (below), around the width set in the panel. Moving and picking icons is Select's. |
 | Select | With **Select**, click any icon, a biome's plants included (Caleb: each icon can be sized on its own). One of the app's own icons is taken over: it becomes an icon placed by hand, in the same spot, at the same size, with the same drawing, and the app leaves out its own copy. From then on it stays as Caleb leaves it, even if the biome under it changes. Deleting it leaves the spot empty; undo gives it back to the app. Icons too small to see at the current zoom cannot be picked. |
 | Settings | Width in km; height or drop in meters (terrain icons); for cliffs and waterfalls, which of the 8 directions it faces, with a small preview; for cliffs, the shape. Set before placing, or edit the selected icon. |
 | Move, delete | Drag an icon to move it; `Delete` or `Backspace` removes the selected one; `Escape` lets go. Clicking the map takes focus away from the panel's fields (keeping what was typed), so `Delete` then works on the map. |
@@ -446,6 +449,12 @@ No change (still 6): records already held fields, free write, images and links. 
 ### Also fixed
 
 - The map's Space-to-pan and its other shortcuts ignored only ordinary text boxes, so a space typed in the free write was swallowed. They now ignore any place where text is being typed, and Space-to-pan is off while the map is hidden.
+
+## Polygons and placing (after Stage 7)
+
+- **Polygons**: one round of evening out instead of two (see Stage 2), for maps made from now on.
+- **Sizing by polygon** (`polygonScale` in `src/lib/map/terrain.ts`), used for mountains, hills and volcanoes, by hand and by the generator: a polygon's width between its east-most and west-most neighbors, over the map's average, stretched by 1.7 away from 1 (it was 1.21) and kept within 0.4 to 2.3 (it was 0.45 to 1.9). On the new polygons, 5% of polygons give 0.4 times the width or less and 1% about 2.1 times or more; measured in Stage 4, the old sizing gave 0.59 and 1.65.
+- **One icon per polygon** when placing (see Icons mode). Icons moved with Select still go anywhere.
 
 ## Data structure (agreed with Caleb)
 

@@ -335,14 +335,17 @@ export function MapCanvas(props: Props) {
       return;
     }
     if (iconMode) {
-      // The icon on top under the cursor: in Place, only icons placed by hand; in Select, any icon.
+      // Place: always places, on the polygon clicked (the editor rerolls or replaces an icon already
+      // standing on it). Select: the icon on top under the cursor, any icon.
+      if (iconTool === 'place') {
+        if (p.x >= 0 && p.y >= 0 && p.x <= graph.width && p.y <= graph.height) props.onPlaceIcon(p.x, p.y);
+        return;
+      }
       let hit: Placement | null = null;
-      if (iconTool === 'select') {
-        // Only icons drawn at this zoom: too small to see is too small to pick.
-        const scale = viewRef.current.scale;
-        // As the map shows them now, even if a change (an undo, say) has not been drawn yet.
-        for (const q of buildIcons()) if (q.size * scale >= minPixels(q.set) && iconHit(q, p.x, p.y)) hit = q;
-      } else for (const q of placed.map(placedToPlacement).sort((a, b) => a.y - b.y)) if (iconHit(q, p.x, p.y)) hit = q;
+      // Only icons drawn at this zoom: too small to see is too small to pick.
+      const scale = viewRef.current.scale;
+      // As the map shows them now, even if a change (an undo, say) has not been drawn yet.
+      for (const q of buildIcons()) if (q.size * scale >= minPixels(q.set) && iconHit(q, p.x, p.y)) hit = q;
       if (hit) {
         let id = hit.placed;
         if (!id) {
@@ -353,8 +356,7 @@ export function MapCanvas(props: Props) {
         props.onSelectIcon(id);
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
         drag.current = { kind: 'icon', x: e.clientX, y: e.clientY, vx: 0, vy: 0, id, ox: hit.x - p.x, oy: hit.y - p.y };
-      } else if (iconTool === 'select') props.onSelectIcon(null);
-      else if (p.x >= 0 && p.y >= 0 && p.x <= graph.width && p.y <= graph.height) props.onPlaceIcon(p.x, p.y);
+      } else props.onSelectIcon(null);
       return;
     }
     if (tool === 'fill') {

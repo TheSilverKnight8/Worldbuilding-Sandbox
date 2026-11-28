@@ -1,6 +1,6 @@
 import type { CliffShape, IconKind, PlacedIcon, TerrainKind } from '../world/types';
 import type { Dir } from './art/cliff';
-import { cellAt, cellsNear, type Graph } from './graph';
+import { across, cellAt, cellsNear, type Graph } from './graph';
 
 // Elevation (Stage 4). The ground has a painted base elevation (meters, land only; the
 // coast stays where it was painted). Terrain icons placed by hand shape it on top, and
@@ -163,3 +163,53 @@ export function underTerrain(g: Graph, icons: PlacedIcon[]): Uint8Array {
   }
   return covered;
 }
+
+// ------------------------------------------------------------------ icons and their polygons
+
+/** Icons sized by the polygon they stand on, as Nortantis sizes its mountains: by hand and by the generator. */
+export const SIZED_BY_POLYGON: ReadonlySet<IconKind> = new Set<IconKind>(['mountain', 'hill', 'volcano']);
+
+/**
+ * How strongly an icon's size follows its polygon's: a polygon's width (between its east-most
+ * and west-most neighbors, as Nortantis measures it) over the map's average is stretched by
+ * this much away from 1 (Caleb asked for more than Nortantis's own), and kept within the limits.
+ */
+const POLYGON_STRETCH = 1.7;
+const POLYGON_SCALE_MIN = 0.4;
+const POLYGON_SCALE_MAX = 2.3;
+const scaleCache = new WeakMap<Graph, Float32Array>();
+
+/** Each polygon's size factor for the icons sized by it (1 for an average polygon). */
+export function polygonScale(g: Graph): Float32Array {
+  const hit = scaleCache.get(g);
+  if (hit) return hit;
+  const w = new Float32Array(g.cellCount);
+  let sum = 0;
+  for (let c = 0; c < g.cellCount; c++) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1]; k++) {
+      const n = across(g, g.cellEdges[k], c);
+      if (n < 0) continue;
+      lo = Math.min(lo, g.centers[n * 2]);
+      hi = Math.max(hi, g.centers[n * 2]);
+    }
+    w[c] = hi > lo ? hi - lo : 0;
+    sum += w[c];
+  }
+  const mean = sum / g.cellCount || 1;
+  for (let c = 0; c < g.cellCount; c++) w[c] = Math.max(POLYGON_SCALE_MIN, Math.min(POLYGON_SCALE_MAX, 1 + POLYGON_STRETCH * (w[c] / mean - 1)));
+  scaleCache.set(g, w);
+  return w;
+}
+
+/** How far below its polygon's middle an icon's ground point goes, so it stands on the polygon (map units). */
+export function footOffset(kind: IconKind, size: number, spacing: number) {
+  if (kind === 'mountain' || kind === 'volcano') return spacing * 0.35;
+  if (kind === 'hill') return spacing * 0.25;
+  if (kind === 'plateau') return size * 0.15;
+  return 0;
+}
+
+/** The polygon an icon stands on (one icon per polygon when placing: see the Icons mode). */
+export const iconCell = (g: Graph, icon: { kind: IconKind; x: number; y: number; size: number }) => cellAt(g, icon.x, icon.y - footOffset(icon.kind, icon.size, g.spacing));

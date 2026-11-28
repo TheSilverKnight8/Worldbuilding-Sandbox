@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
 import { Button, IconButton, Input, Select, cx } from '../components/ui';
 import { frameOf, iconSprite, placementLook } from '../lib/map/icons';
-import { KINDS, dirOf } from '../lib/map/terrain';
+import { KINDS, SIZED_BY_POLYGON, dirOf } from '../lib/map/terrain';
 import { CLIFF_SHAPES, ICON_KINDS, TERRAIN_KINDS, type CliffShape, type IconKind, type PlacedIcon } from '../lib/world/types';
 
 /** Settings for an icon: width in km, meters (height or drop), a cliff's or waterfall's direction (compass degrees, one of 8) and a cliff's shape. */
@@ -113,12 +113,13 @@ function NumberField({ label, unit, value, min, max, step, onChange }: { label: 
   );
 }
 
-function Settings({ kind, settings, onChange }: { kind: IconKind; settings: IconSettings; onChange: (s: IconSettings) => void }) {
+function Settings({ kind, settings, onChange, sizedByPolygon = false }: { kind: IconKind; settings: IconSettings; onChange: (s: IconSettings) => void; sizedByPolygon?: boolean }) {
   const info = KINDS[kind];
   const dir = dirOf({ angle: settings.angle });
   return (
     <div className="space-y-3">
       <NumberField label="Width" unit="km" value={Math.round(settings.sizeKm * 10) / 10} min={0.1} max={5000} step={1} onChange={(v) => onChange({ ...settings, sizeKm: v })} />
+      {sizedByPolygon && <p className="-mt-1.5 text-xs text-muted">Placed ones are sized by their polygon, around this width.</p>}
       {info.meters && <NumberField label={info.meters.label} unit="m" value={settings.meters ?? info.meters.value} min={0} max={9000} step={50} onChange={(v) => onChange({ ...settings, meters: v })} />}
       {info.directional && (
         <div className="space-y-1">
@@ -209,9 +210,9 @@ export function IconsPanel({ kind, onKind, settings, onSettings, selected, selec
       </section>
       <section className="px-4 py-4">
         <h2 className="label-caps mb-3 text-muted">New {KINDS[kind].label.toLowerCase()}</h2>
-        <Settings kind={kind} settings={settings} onChange={onSettings} />
+        <Settings kind={kind} settings={settings} onChange={onSettings} sizedByPolygon={SIZED_BY_POLYGON.has(kind)} />
         <p className="mt-3 text-xs text-muted">
-          With Place, click the map to place one. With Select, click any icon, a biome&apos;s plants and the waterfalls on rivers included, to move, resize or delete it; it then stays as you leave it.
+          With Place, click a polygon to place one in its middle, one per polygon: clicking a polygon that already has one gives it another drawing, or swaps it for the kind chosen. A polygon a neighbor&apos;s icon only reaches over can take its own; the one in front is drawn on top. With Select, click any icon, a biome&apos;s plants and the waterfalls on rivers included, to move, resize or delete it; it then stays as you leave it.
           {KINDS[kind].group === 'terrain' && ' Terrain icons shape the ground around them, and stay where you put them.'}
         </p>
       </section>

@@ -10,7 +10,12 @@ import { seededRandom } from '../rng';
 export const MAP_LONG_SIDE = 1000;
 /** Cells in a new map (Nortantis allows 2,000 to 32,000). */
 export const DEFAULT_CELLS = 16000;
-const LLOYD_ITERATIONS = 2;
+/**
+ * How many times new polygons are evened out (Lloyd relaxation). One pass, as Nortantis does,
+ * so they vary in size about as much as Nortantis's (Caleb asked for more variety than the two
+ * passes used before). Only new maps: a map's polygons are stored, never made again.
+ */
+const LLOYD_ITERATIONS = 1;
 
 export interface Graph {
   /** Map size in map units. */
