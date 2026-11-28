@@ -33,7 +33,7 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 
 - Drawn by the app. No imported images, and no importing of Nortantis maps.
 - A world starts as a randomly generated map or a blank one; either way it can be edited.
-- Random generation is offered only when the map is set up. It has four settings (amount of land, continents or islands, how mountainous, climate) and a preview I can generate again until I keep one. It makes land, elevation, lakes, rivers, biomes and terrain icons (mountains, hills, volcanoes, plateaus, cliffs).
+- Random generation is offered only when the map is set up. It has four settings (amount of land, continents or islands, how mountainous, climate) and a preview I can generate again until I keep one. It makes land, elevation, lakes, rivers, biomes, terrain icons (mountains, hills, volcanoes, plateaus) and cliffs, some of them along shores so that rivers fall into the sea or a lake.
 - Map size is set as width × height in kilometers; the area is shown in km². Distances and coordinates are in kilometers, with a readout under the map. No grid overlay.
 - Built from irregular polygons, like Nortantis, not a square grid.
 
@@ -50,9 +50,11 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 - Placing terrain icons shapes the elevation. Shaping the elevation does not place icons: only icons placed by hand are drawn, or by random generation, which places them the same way (so they can be moved, resized or deleted).
 - Icons come before elevation. A terrain icon placed by hand stays exactly where I put it, and the elevation under it reads at least that icon's height, whatever is painted around it.
 - Icons are placed as in Nortantis: in the middle of the polygon I click, one per polygon. Clicking a polygon that already has one rerolls its drawing; placing another kind there replaces it. A polygon that a neighbor's icon only reaches over can take its own, with the one in front drawn on top. Mountains, hills and volcanoes are sized by their polygon, whether placed by hand or generated.
-- Terrain icons, starter set: hills, mountains, volcanoes, plateaus, cliffs. (Valleys and passes are not needed; canyons are dropped for now, since cliffs cover a drop.) Cliffs and waterfalls face any of the 8 compass directions, each drawn as seen from that side.
+- Terrain icons, starter set: hills, mountains, volcanoes, plateaus. (Valleys and passes are not needed; canyons are dropped for now, since cliffs cover a drop.) Waterfalls face any of the 8 compass directions, each drawn as seen from that side.
+- Cliffs are not icons: they run along the borders between polygons, like rivers. I draw one by dragging along where it runs (it snaps to the nearest borders), with the drop on one side, which I can turn. Where the drop faces the viewer its rock face shows below the rim; where it faces away, only the rim. A cliff's face hides what is behind it, and the ground on its high side is raised by the drop.
 - Rivers, lakes and waterfalls follow the elevation. Random generation uses it too: rivers run downhill, mountains follow ridges.
-- Rivers are either drawn by hand, exactly where I put them, or routed downhill by the app from a source I click. Lakes are water painted inside land. A waterfall appears where a river crosses a cliff, and waterfalls can also be placed by hand.
+- Rivers run along the borders between polygons, as in Nortantis. They are either drawn by hand (snapped to the borders nearest my stroke) or routed downhill by the app from a source I click. Lakes are water painted inside land.
+- A waterfall appears where a river goes over a cliff, drawn down the cliff's face; at the shore it falls into the sea or the lake. Rivers widen up to a waterfall and narrow again below it, and a river made over a cliff leaves the waterfall the way it falls. Waterfalls can also be placed by hand.
 - Seeing elevation: the readout under the map, plus an elevation overlay to toggle on. The overlay uses both: land colored by height, with contour lines.
 
 ### Biomes
