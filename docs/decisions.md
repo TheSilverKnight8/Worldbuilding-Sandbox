@@ -503,6 +503,59 @@ Cliffs were icons (Stage 4) with a drawing for each of 8 directions (Stage 5). A
 
 The cliff icon, its 8 direction drawings and shapes, and the "Drop faces" buttons. The zigzag samples made for the cliff icons were not used.
 
+## Map items, part 1: settlements, text and nodes (Stage 8)
+
+Stage 8 is built in three parts, each with its own checkpoint: settlement icons, text and nodes; then roads; then decorations. Caleb's answers before it started:
+
+| Question | Caleb |
+| --- | --- |
+| Nodes | A node is attached to text or an icon, never on its own, and shows no text of its own (text is placed separately). Making one offers a new entry or one that exists. Placing it on an icon or text attaches it, so it moves and is deleted with that item. |
+| Settlement icons | Picked by hand. "Those plus more": farm, village, town, city, walled city, castle, port, ruins. Fixed sizes, not by polygon. "I would like the ability to choose the color of the roofs of each. Also, like with the geographical features be prepared for custom requests later on." |
+| Roads | "Both, as Nortantis does": along polygon borders, and drawn freely through points (part 2). |
+| Landmark icons | "Not yet." |
+| Text | The kinds Nortantis has: title, region, mountain range, other mountains, city, lake, river, road. It can be turned, run over several lines, curve along a line, and have its own size. Font set A, "Engraved". The soft edge behind the letters: "Keep it". |
+
+### Settlement icons
+
+| Item | Choice |
+| --- | --- |
+| Drawn | In code (`src/lib/map/art/settlements.ts`), in the same ink as the terrain, seen from the south and a little above: each house shows its gable end to the front and its roof and side receding up and to the right; shaded faces are hatched. Farm (farmhouse, barn, ploughed field), village (a few houses, sometimes a small church), town (houses around a church with a steeple), city (many houses, towers, a great church), walled city (a city in a ring of walls with towers and a gate), castle (a keep in a curtain wall with corner towers), port (houses, a pier, a moored ship), ruins (broken walls, a broken tower, rubble). 8 drawings of each. Lines are set as for a drawing 1.4 cell spacings wide whatever the settlement's size, so small buildings are not drawn too heavy. |
+| Size | Fixed by kind (Caleb), in cell spacings: farm 0.9, village 1.4, ruins 1.4, castle 1.8, town 1.9, port 1.9, city 2.5, walled city 3.0. Width can still be set before placing and changed on a selected one, as for every icon. |
+| Placing | In Icons mode, under **Settlements**, one per polygon like the other icons. A biome's plants are kept off them. |
+| Roof color | Each settlement has its own roof color (Caleb), set before placing and on a selected one; red-brown (`#a8553c`) to start. It shows on the painterly map; the atlas stays in ink. |
+| Later kinds | Each kind is one drawing function and one line in `KINDS`, so kinds Caleb asks for later are added the same way. |
+
+### Text
+
+| Item | Choice |
+| --- | --- |
+| Kinds and fonts | Set A, "Engraved" (Caleb), bundled with the app (SIL Open Font License, from `@fontsource`): Title in Cinzel Decorative bold; Region in Cinzel, widely spaced capitals; Mountain range in IM Fell English small capitals, spaced; Other mountains and City in IM Fell English; Lake, River and Road in IM Fell English italic. Sizes in cell spacings at 100%: title 2.3, region 1.5, range 1.1, city 0.95, lake 0.9, mountains and river 0.85, road 0.7. |
+| On the map | Text is part of the map: it grows and shrinks with it, and is left out when its letters would be under 2.5 pixels tall. It is drawn over the icons, each letter first with a soft paper-colored edge, then in ink (dark brown on both looks). |
+| Text mode | **Add**: click to add straight text of the chosen kind there, or drag along a line (a river, a range) to add text that follows it; its words are then typed beside the map (it starts as the kind's name, selected). **Select**: click text to select it, drag it to move it. A selected text has its words (several lines, except on a curve), kind, size (30% to 400%), turn (straight text) or **Make it straight** (curved text), and **Delete** (or `Delete`); `Escape` lets go. Every change joins the undo history; typing is one step per pause. |
+| Curves | A drag is smoothed and kept as points relative to the text's middle, so moving it moves the curve. The words are centered along it, each letter standing on it; the curve is read left to right so letters never stand on their heads. |
+
+### Nodes
+
+| Item | Choice |
+| --- | --- |
+| Stored | The entry's ID on the icon or text (`entry`). An icon or text stands for at most one entry; an entry can have several nodes (a village icon and its name, say). |
+| Nodes mode | Click an icon (the app's own plants and waterfalls included, which are then taken over) or a piece of text. If it is not a node yet, the panel offers **A new entry** (type and name, from what the item is: a settlement icon or city text makes a settlement, terrain and water icons and mountain, lake and river text a feature, range text a group, plants a landmark, other text an info node; the name is the text's words, or "New village") or **An entry that exists** (search by name among settlements, landmarks, features, info nodes and groups). If it is, the panel shows the entry, with **Open the entry**, **Link another** and **Unlink**. Linking and unlinking join the undo history (an entry made this way stays). Small marks show which items are nodes, in this mode only: at an icon's foot, under a text's words. |
+| Entry pages | Settlements, landmarks, features, info nodes and groups have **On the map**: each of their nodes, with **Show on the map**, which opens the map in Nodes mode with that node picked and the view about 40 polygons across around it. |
+| Biome and elevation | Settlements, landmarks and features show the biome and elevation at their first node (SPEC.md), read from the map each time: the elevation as the map shows it, terrain icons and cliffs included. On water, the biome is none and the elevation sea level. |
+| Entries list | Place entries show their elevation in the list. With Settlements, Landmarks or Features chosen, **Filters** has an elevation range; entries not on the map are left out while it is set. |
+| Deleting | Deleting an icon or text deletes its node. Deleting an entry takes its links off the map's icons and text, which stay. |
+
+### Format
+
+- Format version **9** adds `MapInfo.texts`, a roof color (`color`) on placed icons, and `entry` on placed icons and texts. Worlds from earlier formats open with no text.
+- In a file, text of an unknown kind, or with no words, position or ID (or an ID used twice), is left out; words are cut at 500 characters; size is kept within 30% to 400%; a curve of fewer than two points is dropped; a roof color that is not a hex color is dropped.
+
+### Noted to Caleb
+
+- Roof colors show on the painterly map only; the atlas stays in ink.
+- Node marks show only in Nodes mode.
+- A river drawn by hand uphill across a cliff still gets a waterfall where it crosses. Caleb: "looks good".
+
 ## Data structure (agreed with Caleb)
 
 In `src/lib/world/types.ts`. Settled in Stage 1 because it is costly to change once material is entered.

@@ -1,4 +1,4 @@
-import { ICON_KINDS, RECORD_KINDS, type Cliff, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type River, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
+import { ICON_KINDS, RECORD_KINDS, type Cliff, type MapText, type TextKind, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type River, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
 
 // Every world carries a format version, both in this browser's storage and in an
 // exported file. When the shape of a world changes, FORMAT_VERSION goes up and
@@ -17,9 +17,11 @@ import { ICON_KINDS, RECORD_KINDS, type Cliff, type FieldValue, type IconKind, t
 //      borders nearest it (that needs the map's polygons, which are stored apart).
 //   8  Cliffs along polygon borders (MapInfo.cliffs), each a chain of polygon corners. Cliff
 //      icons from earlier formats are removed (Caleb), with the waterfalls the app drew on them.
+//   9  Stage 8: map text (MapInfo.texts), settlement icons and their roof colors, and nodes
+//      (an icon or text linked to an entry by its ID).
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 8;
+export const FORMAT_VERSION = 9;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
@@ -65,6 +67,8 @@ function upgrade(raw: Record<string, unknown>, from: number): Record<string, unk
     const hiddenAuto = Array.isArray(m.hiddenAuto) ? (m.hiddenAuto as unknown[]).filter((k) => !(typeof k === 'string' && k.startsWith('w'))) : [];
     o = { ...o, map: { ...m, icons, hiddenAuto, cliffs: [] } };
   }
+  // 8 -> 9: a map gets no text yet.
+  if (from < 9 && o.map) o = { ...o, map: { ...rec(o.map), texts: [] } };
   return o;
 }
 
@@ -82,6 +86,8 @@ function readIcons(v: unknown): PlacedIcon[] {
     if (isNum(r.variant) && r.variant >= 0) icon.variant = Math.floor(r.variant);
     if (isNum(r.angle)) icon.angle = r.angle;
     if (isNum(r.meters)) icon.meters = r.meters;
+    if (isStr(r.color) && /^#[0-9a-f]{6}$/i.test(r.color)) icon.color = r.color.toLowerCase();
+    if (isStr(r.entry) && r.entry) icon.entry = r.entry;
     out.push(icon);
   }
   return out;
@@ -117,7 +123,32 @@ function readMap(v: unknown): MapInfo | null {
     hiddenAuto: Array.isArray(m.hiddenAuto) ? (m.hiddenAuto as unknown[]).filter(isStr).slice(0, 200000) : [],
     rivers: readRivers(m.rivers, m.width, m.height),
     cliffs: readCliffs(m.cliffs),
+    texts: readTexts(m.texts),
   };
+}
+
+const TEXT_KINDS = new Set<string>(['title', 'region', 'range', 'mountain', 'city', 'lake', 'river', 'road']);
+
+/** Map text that makes sense: an ID, a kind, words, a place; a turn, a size and a curve where given and sensible. */
+function readTexts(v: unknown): MapText[] {
+  if (!Array.isArray(v)) return [];
+  const out: MapText[] = [];
+  const ids = new Set<string>();
+  for (const item of v.slice(0, 20000)) {
+    const r = rec(item);
+    if (!isStr(r.id) || ids.has(r.id) || !isStr(r.kind) || !TEXT_KINDS.has(r.kind) || !isStr(r.text) || !isNum(r.x) || !isNum(r.y)) continue;
+    ids.add(r.id);
+    const t: MapText = { id: r.id, kind: r.kind as TextKind, text: r.text.slice(0, 500), x: r.x, y: r.y };
+    if (isNum(r.angle)) t.angle = ((r.angle % 360) + 360) % 360;
+    if (isPos(r.scale)) t.scale = Math.min(4, Math.max(0.3, r.scale));
+    if (Array.isArray(r.curve)) {
+      const curve = (r.curve as unknown[]).slice(0, 400).filter((p): p is [number, number] => Array.isArray(p) && isNum(p[0]) && isNum(p[1])).map(([x, y]) => [x, y] as [number, number]);
+      if (curve.length >= 2) t.curve = curve;
+    }
+    if (isStr(r.entry) && r.entry) t.entry = r.entry;
+    out.push(t);
+  }
+  return out;
 }
 
 /** Cliffs that make sense: an ID, a drop, and a chain of at least two polygon corners. Whether the corners are on this map is checked when it is opened. */

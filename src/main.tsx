@@ -5,6 +5,11 @@ import '@fontsource-variable/archivo';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/eb-garamond';
 import '@fontsource/im-fell-english-sc';
+// Map text (Stage 8, Caleb's font set A).
+import '@fontsource/cinzel-decorative/700.css';
+import '@fontsource/cinzel/600.css';
+import '@fontsource/im-fell-english/400.css';
+import '@fontsource/im-fell-english/400-italic.css';
 import './index.css';
 import App from './App';
 

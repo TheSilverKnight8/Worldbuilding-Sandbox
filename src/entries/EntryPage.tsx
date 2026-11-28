@@ -9,6 +9,8 @@ import type { IconSet, WorldDoc, WorldRecord } from '../lib/world/types';
 import { FieldEditor } from './fields';
 import { FreeWrite } from './FreeWrite';
 import { Gallery, useImageUrl } from './Gallery';
+import { OnTheMap, PlaceFacts } from './OnTheMap';
+import { PLACE_KINDS } from '../lib/map/nodes';
 
 // An entry's page (Stage 7), in the world's look (SPEC.md: entry pages follow the style toggle):
 // on the atlas, a printed page on the map's parchment, in ink, with old-print type; on the
@@ -52,7 +54,7 @@ export function EntryPage({ entry, doc, look }: { entry: WorldRecord; doc: World
       </div>
 
       <div className="entry-body">
-        {(FIELDS[kind].length > 0 || kind === 'biome' || kind === 'nation') && (
+        {(FIELDS[kind].length > 0 || kind === 'biome' || kind === 'nation' || PLACE_KINDS.includes(kind)) && (
           <section className="entry-facts" aria-label="Fields">
             {kind === 'biome' && <BiomeFields entry={entry} />}
             {FIELDS[kind].map((def) => (
@@ -69,8 +71,11 @@ export function EntryPage({ entry, doc, look }: { entry: WorldRecord; doc: World
               </div>
             ))}
             {kind === 'nation' && <NationTotals doc={doc} id={entry.id} />}
+            <PlaceFacts entry={entry} doc={doc} />
           </section>
         )}
+
+        <OnTheMap entry={entry} doc={doc} />
 
         <section className="entry-section">
           <FreeWrite key={entry.id} entry={entry} />

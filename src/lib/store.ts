@@ -11,7 +11,7 @@ import { DEFAULT_LAND_ELEVATION } from './map/terrain';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
 import { KIND_LABEL, linksIn, withoutRef, type EntryKind } from './world/entries';
-import { metaOf, type BiomeFields, type Cliff, type FieldValue, type IconSet, type MapInfo, type PlacedIcon, type River, type WorldBlob, type WorldDoc, type WorldMeta, type WorldRecord } from './world/types';
+import { metaOf,  type BiomeFields, type Cliff, type MapText, type FieldValue, type IconSet, type MapInfo, type PlacedIcon, type River, type WorldBlob, type WorldDoc, type WorldMeta, type WorldRecord } from './world/types';
 
 export interface SaveStatus {
   state: 'saved' | 'saving' | 'error';
@@ -396,6 +396,10 @@ export function getMap() {
   return mapData;
 }
 
+/** Goes up every time the map data changes in place (a dab of paint, an undo), for caches of what is worked out from it. */
+let mapVersion = 0;
+export const getMapVersion = () => mapVersion;
+
 export function onMapChange(fn: MapListener) {
   mapListeners.add(fn);
   return () => {
@@ -405,6 +409,7 @@ export function onMapChange(fn: MapListener) {
 
 /** Tells the renderer the map changed. The painting tools call it after every dab. */
 export function emitMap(change: MapChange) {
+  mapVersion++;
   for (const fn of mapListeners) fn(change);
 }
 
@@ -494,6 +499,7 @@ export async function setupMap(widthKm: number, heightKm: number, draft?: MapDra
     hiddenAuto: [],
     rivers: [],
     cliffs: [],
+    texts: [],
   };
   try {
     // The polygons are written once, now; land and biomes save with the world from here on.
@@ -581,6 +587,11 @@ export function setRivers(rivers: River[]) {
   updateWorld((d) => (d.map ? { ...d, map: { ...d.map, rivers } } : d));
 }
 
+/** Sets the map's text. */
+export function setTexts(texts: MapText[]) {
+  updateWorld((d) => (d.map ? { ...d, map: { ...d.map, texts } } : d));
+}
+
 /** Sets the map's cliffs (they shape the ground, so the map is redrawn as for an elevation change). */
 export function setCliffs(cliffs: Cliff[]) {
   updateWorld((d) => (d.map ? { ...d, map: { ...d.map, cliffs } } : d));
@@ -666,7 +677,18 @@ export async function deleteEntry(id: string) {
       if (records === d.records) records = { ...d.records };
       records[o.id] = w;
     }
-    return records === d.records ? d : { ...d, records };
+    // Its nodes on the map go too (the icons and text stay, as plain ones).
+    let map = d.map;
+    if (map && (map.icons.some((i) => i.entry === id) || map.texts.some((t) => t.entry === id))) {
+      const drop = <T extends { entry?: string }>(x: T): T => {
+        if (x.entry !== id) return x;
+        const { entry: _gone, ...rest } = x;
+        void _gone;
+        return rest as T;
+      };
+      map = { ...map, icons: map.icons.map(drop), texts: map.texts.map(drop) };
+    }
+    return records === d.records && map === d.map ? d : { ...d, records, map };
   });
   for (const b of r.images ?? []) await deleteBlob(doc.id, b).catch(() => undefined);
 }

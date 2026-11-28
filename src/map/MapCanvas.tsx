@@ -14,7 +14,9 @@ import { mapIcons, placedToPlacement } from '../lib/map/scene';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
 import { computeHeights } from '../lib/map/terrain';
-import type { Cliff, PlacedIcon, River } from '../lib/world/types';
+import { loadMapFonts, measureContext, textAt, textOutline } from '../lib/map/text';
+import type { NodeTarget } from '../lib/map/nodes';
+import type { Cliff, MapText, PlacedIcon, River } from '../lib/world/types';
 
 export type Tool = 'brush' | 'fill' | 'hand';
 /** In Icons mode: place new icons, or select any icon (the app's own ones included). */
@@ -23,6 +25,8 @@ export type IconTool = 'place' | 'select';
 export type RiverTool = 'draw' | 'route' | 'select';
 /** In Cliffs mode: draw a cliff along borders, or select one. */
 export type CliffTool = 'draw' | 'select';
+/** In Text mode: add text (a click: straight; a drag: along the line dragged), or select and move it. */
+export type TextTool = 'add' | 'select';
 
 /** What is under the cursor: map position (map units), the cell, and what is there. */
 export interface Hover {
@@ -38,6 +42,8 @@ export interface Hover {
 
 export interface MapCanvasHandle {
   fit: () => void;
+  /** Centers the map on (x, y), zoomed in to show the land around it. */
+  focus: (x: number, y: number) => void;
 }
 
 interface Props {
@@ -70,6 +76,19 @@ interface Props {
   /** A new cliff: its chain of polygon corners, the drop on its right. */
   onAddCliff: (vertices: number[]) => void;
   onSelectCliff: (id: string | null) => void;
+  texts: MapText[];
+  /** Text mode: clicks add, select and move text instead of painting. */
+  textMode: boolean;
+  textTool: TextTool;
+  selectedText: string | null;
+  /** New text at (x, y), straight, or along `curve` (map units from (x, y)). */
+  onAddText: (x: number, y: number, curve?: [number, number][]) => void;
+  onSelectText: (id: string | null) => void;
+  onMoveText: (id: string, x: number, y: number) => void;
+  /** Nodes mode: clicks pick an icon or text to link to an entry. */
+  nodeMode: boolean;
+  selectedNode: NodeTarget | null;
+  onPickNode: (t: NodeTarget | null) => void;
   selectedIcon: string | null;
   brush: Brush;
   tool: Tool;
@@ -94,7 +113,7 @@ export { placedToPlacement };
 
 /** The map on screen, in the atlas or painterly look. */
 export function MapCanvas(props: Props) {
-  const { handle, graph, seed, style, looks, placed, hiddenAuto, overlay, iconMode, iconTool, rivers, riverMode, riverTool, selectedRiver, cliffs, cliffMode, cliffTool, selectedCliff, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
+  const { handle, graph, seed, style, looks, placed, hiddenAuto, overlay, iconMode, iconTool, rivers, riverMode, riverTool, selectedRiver, cliffs, cliffMode, cliffTool, selectedCliff, texts, textMode, textTool, selectedText, nodeMode, selectedNode, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<MapRenderer | null>(null);
@@ -107,9 +126,17 @@ export function MapCanvas(props: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [hoverCell, setHoverCell] = useState(-1);
   const [space, setSpace] = useState(false);
-  const drag = useRef<{ kind: 'pan' | 'paint' | 'icon' | 'river' | 'cliff'; x: number; y: number; vx: number; vy: number; id?: string; ox?: number; oy?: number } | null>(null);
+  const drag = useRef<{ kind: 'pan' | 'paint' | 'icon' | 'river' | 'cliff' | 'text' | 'move-text'; x: number; y: number; vx: number; vy: number; id?: string; ox?: number; oy?: number } | null>(null);
   /** While an icon is dragged: its new position (committed when the drag ends). */
   const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
+  /** Nodes mode: the icon or text under the cursor. */
+  const [hoverItem, setHoverItem] = useState<{ kind: 'icon' | 'text'; id: string; hit: Placement | null } | null>(null);
+  useEffect(() => {
+    if (!nodeMode) setHoverItem(null);
+  }, [nodeMode]);
+  /** While a text is dragged: its new position. */
+  const [movingText, setMovingText] = useState<{ id: string; x: number; y: number } | null>(null);
+  const shownTexts = useMemo(() => (movingText ? texts.map((t) => (t.id === movingText.id ? { ...t, x: movingText.x, y: movingText.y } : t)) : texts), [texts, movingText]);
   const noisy = useMemo(() => new NoisyEdges(graph, seed), [graph, seed]);
   const frame = useRef(0);
   const settle = useRef(0);
@@ -128,8 +155,8 @@ export function MapCanvas(props: Props) {
   const shapes = useMemo(() => riverShapes(rivers, graph, noisy), [rivers, graph, noisy]);
   /** A river or cliff being drawn by hand (map units), until the pointer is let go. */
   const [draft, setDraft] = useState<[number, number][] | null>(null);
-  const live = useRef({ style, looks, placed: shownIcons, overlay, hidden, shapes, cliffs });
-  live.current = { style, looks, placed: shownIcons, overlay, hidden, shapes, cliffs };
+  const live = useRef({ style, looks, placed: shownIcons, overlay, hidden, shapes, cliffs, texts: shownTexts });
+  live.current = { style, looks, placed: shownIcons, overlay, hidden, shapes, cliffs, texts: shownTexts };
 
   /** The waterfalls where rivers go over cliffs, the rivers as drawn (widening up to them) and the cliffs as drawn: made again when the rivers, cliffs or land change. */
   const derived = useRef<{ shapes: RiverShape[]; cliffs: Cliff[]; hidden: Set<string>; land: number; falls: AutoWaterfall[]; rivers: RiverShape[]; art: CliffDrawing[] } | null>(null);
@@ -176,7 +203,7 @@ export function MapCanvas(props: Props) {
     const v = viewRef.current;
     r.draw(
       v,
-      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: buildIcons(), heights: heights.current, overlay: l.overlay, noisy, rivers: derive().rivers, cliffs: derive().art },
+      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: buildIcons(), heights: heights.current, overlay: l.overlay, noisy, rivers: derive().rivers, cliffs: derive().art, texts: l.texts },
       l.style,
       painting.current,
     );
@@ -251,7 +278,15 @@ export function MapCanvas(props: Props) {
     return () => onSpritesReady(null);
   }, [drawSoon]);
 
-  useEffect(() => drawSoon(), [style, overlay, drawSoon]);
+  useEffect(() => drawSoon(), [style, overlay, shownTexts, drawSoon]);
+  // The map's fonts: draw again once they are in.
+  useEffect(() => {
+    let live = true;
+    loadMapFonts().then(() => live && drawSoon());
+    return () => {
+      live = false;
+    };
+  }, [drawSoon]);
   useEffect(() => drawSettled(), [view, drawSettled]);
 
   const fit = useCallback(() => {
@@ -263,7 +298,20 @@ export function MapCanvas(props: Props) {
     setView(v);
     drawSoon();
   }, [graph, drawSoon]);
-  useImperativeHandle(handle, () => ({ fit }), [fit]);
+  const focus = useCallback(
+    (x: number, y: number) => {
+      const el = box.current;
+      if (!el) return;
+      // About forty polygons across, or closer if already closer.
+      const scale = Math.max(viewRef.current.scale, el.clientWidth / (graph.spacing * 40));
+      const v = { scale, x: el.clientWidth / 2 - x * scale, y: el.clientHeight / 2 - y * scale };
+      viewRef.current = v;
+      setView(v);
+      drawSoon();
+    },
+    [graph, drawSoon],
+  );
+  useImperativeHandle(handle, () => ({ fit, focus }), [fit, focus]);
   useEffect(fit, [fit]);
   useEffect(() => onZoom(view.scale), [view.scale, onZoom]);
 
@@ -331,6 +379,17 @@ export function MapCanvas(props: Props) {
     return { ...p, cell, land, biomeSlot: map.biome[cell], elevation: land ? (heights.current?.[cell] ?? map.elevation[cell]) : 0 };
   };
 
+  /** The icon or text on top at map point (x, y), as drawn at this zoom (text is drawn over icons). */
+  const itemAt = (x: number, y: number): { kind: 'icon' | 'text'; id: string; placed: boolean; hit: Placement | null } | null => {
+    const t = textAt(measureContext(), live.current.texts, x, y, graph.spacing);
+    if (t) return { kind: 'text', id: t, placed: true, hit: null };
+    let hit: Placement | null = null;
+    const scale = viewRef.current.scale;
+    for (const q of buildIcons()) if (q.size * scale >= minPixels(q.set) && iconHit(q, x, y)) hit = q;
+    if (!hit) return null;
+    return { kind: 'icon', id: hit.placed ?? hit.auto ?? '', placed: !!hit.placed, hit };
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (error) return;
     const pan = e.button === 1 || (e.button === 0 && (tool === 'hand' || space));
@@ -360,6 +419,34 @@ export function MapCanvas(props: Props) {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
         drag.current = { kind: 'river', x: e.clientX, y: e.clientY, vx: 0, vy: 0 };
         setDraft([[p.x, p.y]]);
+      }
+      return;
+    }
+    if (nodeMode) {
+      const t = itemAt(p.x, p.y);
+      if (t && t.kind === 'icon' && !t.placed && t.hit) {
+        // One of the app's own icons (a biome's plants, a waterfall) is taken over first, as with Select.
+        const map = getMap();
+        const cell = map ? cellAt(map.graph, t.hit.x, t.hit.y - t.hit.size * 0.22) : -1;
+        props.onPickNode({ kind: 'icon', id: props.onAdoptIcon(t.hit, cell >= 0 ? (heights.current?.[cell] ?? 0) : 0) });
+      } else props.onPickNode(t ? { kind: t.kind, id: t.id } : null);
+      return;
+    }
+    if (textMode) {
+      const inside = p.x >= 0 && p.y >= 0 && p.x <= graph.width && p.y <= graph.height;
+      if (textTool === 'add') {
+        if (!inside) return;
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        drag.current = { kind: 'text', x: e.clientX, y: e.clientY, vx: 0, vy: 0 };
+        setDraft([[p.x, p.y]]);
+        return;
+      }
+      const id = textAt(measureContext(), texts, p.x, p.y, graph.spacing);
+      props.onSelectText(id);
+      if (id) {
+        const t = texts.find((q) => q.id === id)!;
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        drag.current = { kind: 'move-text', x: e.clientX, y: e.clientY, vx: 0, vy: 0, id, ox: t.x - p.x, oy: t.y - p.y };
       }
       return;
     }
@@ -411,13 +498,21 @@ export function MapCanvas(props: Props) {
   const onPointerMove = (e: React.PointerEvent) => {
     const r = box.current!.getBoundingClientRect();
     setCursor({ x: e.clientX - r.left, y: e.clientY - r.top });
+    if (nodeMode && !drag.current) {
+      const p = toMap(e.clientX, e.clientY);
+      const t = itemAt(p.x, p.y);
+      setHoverItem(t ? { kind: t.kind, id: t.id, hit: t.hit } : null);
+    }
     const h = hoverAt(e.clientX, e.clientY);
     setHoverCell(h ? h.cell : -1);
     onHover(h);
     const d = drag.current;
     if (!d) return;
     if (d.kind === 'pan') setView((v) => ({ ...v, x: d.vx + e.clientX - d.x, y: d.vy + e.clientY - d.y }));
-    else if (d.kind === 'river' || d.kind === 'cliff') {
+    else if (d.kind === 'move-text' && d.id) {
+      const p = toMap(e.clientX, e.clientY);
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) setMovingText({ id: d.id, x: p.x + (d.ox ?? 0), y: p.y + (d.oy ?? 0) });
+    } else if (d.kind === 'river' || d.kind === 'cliff' || d.kind === 'text') {
       const p = toMap(e.clientX, e.clientY);
       setDraft((pts) => {
         if (!pts) return pts;
@@ -451,6 +546,30 @@ export function MapCanvas(props: Props) {
       const map = getMap();
       const path = map && length >= graph.spacing * 1.5 ? snapLine(map.graph, map.land, draft, rivers, graph.spacing * 0.6, cliffs) : null;
       if (path) props.onAddRiver(path);
+      setDraft(null);
+    } else if (d?.kind === 'move-text' && movingText) {
+      props.onMoveText(movingText.id, movingText.x, movingText.y);
+      setMovingText(null);
+    } else if (d?.kind === 'text' && draft) {
+      // A click adds straight text; a drag adds text along the line dragged (smoothed, its middle at the middle of the line).
+      let length = 0;
+      for (let i = 1; i < draft.length; i++) length += Math.hypot(draft[i][0] - draft[i - 1][0], draft[i][1] - draft[i - 1][1]);
+      if (length < graph.spacing * 1.5) props.onAddText(draft[0][0], draft[0][1]);
+      else {
+        const run = [0];
+        for (let i = 1; i < draft.length; i++) run.push(run[i - 1] + Math.hypot(draft[i][0] - draft[i - 1][0], draft[i][1] - draft[i - 1][1]));
+        const at = (s: number): [number, number] => {
+          let i = 1;
+          while (i < draft.length - 1 && run[i] < s) i++;
+          const t = (s - run[i - 1]) / (run[i] - run[i - 1] || 1);
+          return [draft[i - 1][0] + (draft[i][0] - draft[i - 1][0]) * t, draft[i - 1][1] + (draft[i][1] - draft[i - 1][1]) * t];
+        };
+        const n = 24;
+        let pts = Array.from({ length: n + 1 }, (_, k) => at((length * k) / n));
+        for (let pass = 0; pass < 3; pass++) pts = pts.map((q, k) => (k === 0 || k === n ? q : [(pts[k - 1][0] + 2 * q[0] + pts[k + 1][0]) / 4, (pts[k - 1][1] + 2 * q[1] + pts[k + 1][1]) / 4]));
+        const [mx, my] = at(length / 2);
+        props.onAddText(mx, my, pts.map(([x, y]) => [x - mx, y - my]));
+      }
       setDraft(null);
     } else if (d?.kind === 'cliff' && draft) {
       // A cliff drawn by hand: moved onto the borders nearest the stroke, the drop on its right.
@@ -522,15 +641,45 @@ export function MapCanvas(props: Props) {
     const sy = view.y + q.y * view.scale;
     return { left: sx + b.left * view.scale, top: sy + b.top * view.scale, width: b.width * view.scale, height: b.height * view.scale };
   })();
+  // Nodes mode: an outline around the icon or text under the cursor and the one picked, and a mark on each node.
+  const outlineOf = (t: { kind: 'icon' | 'text'; id: string; hit?: Placement | null } | null): string | null => {
+    if (!t) return null;
+    if (t.kind === 'text') {
+      const x = shownTexts.find((q) => q.id === t.id);
+      return x ? textOutline(measureContext(), x, graph.spacing).map(toScreen).join(' ') : null;
+    }
+    const placedIcon = shownIcons.find((i) => i.id === t.id);
+    const q = placedIcon ? placedToPlacement(placedIcon) : t.hit;
+    if (!q) return null;
+    const b = iconBox(q, placementLook(q));
+    const corners: [number, number][] = [[q.x + b.left, q.y + b.top], [q.x + b.left + b.width, q.y + b.top], [q.x + b.left + b.width, q.y + b.top + b.height], [q.x + b.left, q.y + b.top + b.height]];
+    return corners.map(toScreen).join(' ');
+  };
+  const hoverNodeLine = nodeMode ? outlineOf(hoverItem) : null;
+  const pickedNodeLine = nodeMode ? outlineOf(selectedNode) : null;
+  // Node marks: at an icon's foot; under a text's middle, clear of its letters.
+  const underText = (t: MapText): [number, number] => {
+    const o = textOutline(measureContext(), t, graph.spacing);
+    if (t.curve && o.length === 26) return o[19];
+    return [(o[2][0] + o[3][0]) / 2, (o[2][1] + o[3][1]) / 2];
+  };
+  const nodeMarks = nodeMode
+    ? [...shownIcons.filter((i) => i.entry).map((i) => [i.x, i.y] as [number, number]), ...shownTexts.filter((t) => t.entry).map(underText)].map(([x, y]) => ({ x: view.x + x * view.scale, y: view.y + y * view.scale }))
+    : [];
   const panning = tool === 'hand' || space;
-  const showBrush = cursor && !panning && !iconMode && !riverMode && !cliffMode && tool === 'brush' && !error;
+  const showBrush = cursor && !panning && !iconMode && !riverMode && !cliffMode && !textMode && !nodeMode && tool === 'brush' && !error;
+  // The selected text: a dashed line around it.
+  const selectedTextLine = (() => {
+    const t = selectedText ? shownTexts.find((q) => q.id === selectedText) : undefined;
+    return t ? textOutline(measureContext(), t, graph.spacing).map(toScreen).join(' ') : null;
+  })();
 
   return (
     <div
       ref={box}
       className="relative h-full w-full touch-none overflow-hidden select-none"
       style={{
-        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : riverMode ? (riverTool === 'select' ? 'default' : 'crosshair') : cliffMode ? (cliffTool === 'select' ? 'default' : 'crosshair') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : iconTool === 'select' ? 'default' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
+        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : riverMode ? (riverTool === 'select' ? 'default' : 'crosshair') : cliffMode ? (cliffTool === 'select' ? 'default' : 'crosshair') : textMode ? (textTool === 'select' ? (drag.current?.kind === 'move-text' ? 'grabbing' : 'default') : 'text') : nodeMode ? (hoverItem ? 'pointer' : 'default') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : iconTool === 'select' ? 'default' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -550,6 +699,12 @@ export function MapCanvas(props: Props) {
           <polyline points={draft.map(([x, y]) => `${(view.x + x * view.scale).toFixed(1)},${(view.y + y * view.scale).toFixed(1)}`).join(' ')} fill="none" stroke="#002657" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" data-testid="river-draft" />
         )}
         {draftTicks && <path d={draftTicks} fill="none" stroke="#002657" strokeWidth={2} strokeLinecap="round" data-testid="cliff-draft-drop" />}
+        {hoverNodeLine && <polygon points={hoverNodeLine} fill="none" stroke="#fc3f3f" strokeWidth={1.5} strokeDasharray="4 3" data-testid="hover-node" />}
+        {pickedNodeLine && <polygon points={pickedNodeLine} fill="none" stroke="#002657" strokeWidth={1.8} strokeDasharray="5 4" data-testid="picked-node" />}
+        {nodeMarks.map((m, i) => (
+          <circle key={i} cx={m.x} cy={m.y} r={5} fill="#002657" stroke="#fffaf0" strokeWidth={2} data-testid="node-mark" />
+        ))}
+        {selectedTextLine && <polygon points={selectedTextLine} fill="none" stroke="#002657" strokeWidth={1.5} strokeDasharray="5 4" data-testid="selected-text" />}
         {selectedCliffLine && (
           <>
             <polyline points={selectedCliffLine.line} fill="none" stroke="#002657" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" data-testid="selected-cliff" />

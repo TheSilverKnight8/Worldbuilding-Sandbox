@@ -3,13 +3,14 @@ import { Trash2, X } from 'lucide-react';
 import { Button, IconButton, Input, cx } from '../components/ui';
 import { frameOf, iconSprite, placementLook } from '../lib/map/icons';
 import { KINDS, SIZED_BY_POLYGON, dirOf } from '../lib/map/terrain';
-import { ICON_KINDS, TERRAIN_KINDS, type IconKind, type PlacedIcon } from '../lib/world/types';
+import { ICON_KINDS, SETTLEMENT_KINDS, TERRAIN_KINDS, type IconKind, type PlacedIcon } from '../lib/world/types';
 
-/** Settings for an icon: width in km, meters (a height), and a waterfall's direction (compass degrees, one of 8). */
+/** Settings for an icon: width in km, meters (a height), a waterfall's direction (compass degrees, one of 8), and a settlement's roof color. */
 export interface IconSettings {
   sizeKm: number;
   meters?: number;
   angle?: number;
+  color?: string;
 }
 
 interface Props {
@@ -118,6 +119,21 @@ function Settings({ kind, settings, onChange, sizedByPolygon = false }: { kind: 
     <div className="space-y-3">
       <NumberField label="Width" unit="km" value={Math.round(settings.sizeKm * 10) / 10} min={0.1} max={5000} step={1} onChange={(v) => onChange({ ...settings, sizeKm: v })} />
       {sizedByPolygon && <p className="-mt-1.5 text-xs text-muted">Placed ones are sized by their polygon, around this width.</p>}
+      {info.group === 'settlements' && (
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-sm">Roof color</span>
+          <span className="flex items-center gap-2">
+            <span className="text-xs text-muted">on the painterly map</span>
+            <input
+              type="color"
+              aria-label="Roof color"
+              value={settings.color ?? '#a8553c'}
+              onChange={(e) => onChange({ ...settings, color: e.target.value })}
+              className="h-8 w-10 cursor-pointer rounded border border-line bg-raised p-0.5"
+            />
+          </span>
+        </label>
+      )}
       {info.meters && <NumberField label={info.meters.label} unit="m" value={settings.meters ?? info.meters.value} min={0} max={9000} step={50} onChange={(v) => onChange({ ...settings, meters: v })} />}
       {info.directional && (
         <div className="space-y-1">
@@ -175,6 +191,12 @@ export function IconsPanel({ kind, onKind, settings, onSettings, selected, selec
         <h2 className="label-caps mb-2 text-muted">Terrain</h2>
         <div className="grid grid-cols-4 gap-1">
           {TERRAIN_KINDS.map((k) => (
+            <KindButton key={k} kind={k} active={kind === k} onClick={() => onKind(k)} />
+          ))}
+        </div>
+        <h2 className="label-caps mb-2 mt-4 text-muted">Settlements</h2>
+        <div className="grid grid-cols-4 gap-1">
+          {SETTLEMENT_KINDS.map((k) => (
             <KindButton key={k} kind={k} active={kind === k} onClick={() => onKind(k)} />
           ))}
         </div>

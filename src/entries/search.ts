@@ -15,6 +15,8 @@ export interface EntryQuery {
   text: string;
   kind: EntryKind | 'all';
   fields: Record<string, FieldFilter>;
+  /** Place entries (settlements, landmarks, features): a range of elevation in meters, read from the map at their first node. */
+  elevation?: FieldFilter;
 }
 
 /** The fields of a type that can be filtered by (free text cannot). */
@@ -66,14 +68,20 @@ const snippetAround = (text: string, at: number) => {
   return (start > 0 ? '…' : '') + out + (start + 150 < text.length ? '…' : '');
 };
 
-/** The entries that match, best first (by name when nothing is typed). */
-export function searchEntries(doc: WorldDoc, q: EntryQuery): Hit[] {
+/** The entries that match, best first (by name when nothing is typed). `elevationOf` gives a place entry's elevation from the map (null when it is not on it). */
+export function searchEntries(doc: WorldDoc, q: EntryQuery, elevationOf?: (id: string) => number | null): Hit[] {
+  const e = q.elevation;
+  const byElevation = !!e && (e.min !== undefined || e.max !== undefined) && !!elevationOf;
   const words = q.text.toLowerCase().split(/\s+/).filter(Boolean);
   const out: Hit[] = [];
   for (const r of Object.values(doc.records)) {
     if (!isEntryKind(r.kind)) continue;
     if (q.kind !== 'all' && r.kind !== q.kind) continue;
     if (q.kind !== 'all' && !fieldsOf(r.kind).every((def) => !q.fields[def.key] || passes(def, r, q.fields[def.key]))) continue;
+    if (byElevation) {
+      const m = elevationOf!(r.id);
+      if (m === null || (e!.min !== undefined && m < e!.min) || (e!.max !== undefined && m > e!.max)) continue;
+    }
     const text = plainText(r.text, doc);
     if (!words.length) {
       out.push({ record: r, score: 0, snippet: snippetAround(text, 0) });

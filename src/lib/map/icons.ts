@@ -5,9 +5,10 @@ import { setMinLine, type ArtColors } from './art/ink';
 import { cactus, deciduous, dunes, grass, palm, pine, reeds, shrub } from './art/plants';
 import { hill, mountain, plateau, volcano } from './art/terrain';
 import { waterfall, waterfallFrame } from './art/water';
+import { castle, city, farm, port, ruins, town, village, walledCity, type SettlementColors } from './art/settlements';
 import type { SlotLook } from './biomes';
 import type { Graph } from './graph';
-import { KINDS, dirOf } from './terrain';
+import { DEFAULT_ROOF, KINDS, dirOf } from './terrain';
 
 // Map icons, drawn in code (lib/map/art) in two styles: ink for the atlas, color for the
 // painterly map. Each kind has a set of different drawings (variants). A drawing is made at a
@@ -50,6 +51,14 @@ const ART: Record<IconKind, ArtSpec> = {
   dunes: { aspect: 0.45, anchorY: 0.95, variants: 8, minPx: 9, perCell: 0.5 },
   reeds: { aspect: 1, anchorY: 0.86, variants: 8, minPx: 8, perCell: 2 },
   waterfall: { aspect: 1.1, anchorY: 0.2, variants: 8, minPx: 8, perCell: 0 },
+  farm: { aspect: 0.8, anchorY: 0.88, variants: 8, minPx: 6, perCell: 0 },
+  village: { aspect: 0.75, anchorY: 0.88, variants: 8, minPx: 6, perCell: 0 },
+  town: { aspect: 0.75, anchorY: 0.9, variants: 8, minPx: 6, perCell: 0 },
+  city: { aspect: 0.7, anchorY: 0.9, variants: 8, minPx: 6, perCell: 0 },
+  'walled-city': { aspect: 0.75, anchorY: 0.9, variants: 8, minPx: 6, perCell: 0 },
+  castle: { aspect: 0.85, anchorY: 0.9, variants: 8, minPx: 6, perCell: 0 },
+  port: { aspect: 0.8, anchorY: 0.88, variants: 8, minPx: 6, perCell: 0 },
+  ruins: { aspect: 0.75, anchorY: 0.88, variants: 8, minPx: 6, perCell: 0 },
 };
 /** Of the mountain drawings, the last few are spires (narrow needle peaks). */
 const SPIRES_FROM = 13;
@@ -77,6 +86,14 @@ const PAINT: Record<IconKind, [string, string]> = {
   dunes: ['#d8b874', '#8a6c38'],
   reeds: ['#6c8c52', '#33472a'],
   waterfall: ['#a8987a', '#3e3426'],
+  farm: ['#efe3c8', '#3a2e20'],
+  village: ['#efe3c8', '#3a2e20'],
+  town: ['#efe3c8', '#3a2e20'],
+  city: ['#efe3c8', '#3a2e20'],
+  'walled-city': ['#efe3c8', '#3a2e20'],
+  castle: ['#efe3c8', '#3a2e20'],
+  port: ['#efe3c8', '#3a2e20'],
+  ruins: ['#e6dcc4', '#3a2e20'],
 };
 
 function rgba(hex: string, a: number) {
@@ -84,15 +101,16 @@ function rgba(hex: string, a: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-function colorsFor(kind: IconKind, style: IconStyle): ArtColors {
+function colorsFor(kind: IconKind, style: IconStyle, look: IconLook = {}): SettlementColors {
   if (style === 'atlas') return ATLAS_COLORS;
   const [fill, line] = PAINT[kind];
-  return { fill, color: line, wash: rgba(line, 0.28), washDark: rgba(line, 0.48) };
+  return { fill, color: line, wash: rgba(line, 0.28), washDark: rgba(line, 0.48), roof: KINDS[kind].group === 'settlements' ? (look.roof ?? DEFAULT_ROOF) : undefined };
 }
 
-/** Which drawing of an icon: for a waterfall, the direction it falls toward (a drawing each). */
+/** Which drawing of an icon: for a waterfall, the direction it falls toward (a drawing each); for a settlement, its roofs' color (painterly). */
 export interface IconLook {
   dir?: Dir;
+  roof?: string;
 }
 
 /** The box of an icon's drawing, in units of its width, with its point at (ax, ay). */
@@ -125,9 +143,25 @@ function kindSeed(kind: IconKind) {
   return h >>> 0;
 }
 
-function drawArt(ctx: CanvasRenderingContext2D, kind: IconKind, variant: number, W: number, H: number, c: ArtColors, look: IconLook) {
+function drawArt(ctx: CanvasRenderingContext2D, kind: IconKind, variant: number, W: number, H: number, c: SettlementColors, look: IconLook) {
   const seed = mixSeed(kindSeed(kind), variant);
   switch (kind) {
+    case 'farm':
+      return farm(ctx, seed, W, H, c);
+    case 'village':
+      return village(ctx, seed, W, H, c);
+    case 'town':
+      return town(ctx, seed, W, H, c);
+    case 'city':
+      return city(ctx, seed, W, H, c);
+    case 'walled-city':
+      return walledCity(ctx, seed, W, H, c);
+    case 'castle':
+      return castle(ctx, seed, W, H, c);
+    case 'port':
+      return port(ctx, seed, W, H, c);
+    case 'ruins':
+      return ruins(ctx, seed, W, H, c);
     case 'mountain':
       return mountain(ctx, seed, W, H, c, variant >= SPIRES_FROM);
     case 'hill':
@@ -208,7 +242,7 @@ function makeSprite(kind: IconKind, variant: number, style: IconStyle, level: nu
     canvas.height = ch;
     const ctx = canvas.getContext('2d')!;
     ctx.setTransform(k, 0, 0, k, pad * k, pad * k);
-    let c = colors === 'paint' ? colorsFor(kind, style) : colors;
+    let c: SettlementColors = colors === 'paint' ? colorsFor(kind, style, look) : colors;
     if (colors === 'paint' && style === 'painterly' && (KINDS[kind].group === 'terrain' || kind === 'waterfall') && typeof c.fill === 'string') {
       // Painterly terrain: the fill fades out over the lowest part, toward the ground (for a cliff, toward the foot of its
       // face; for a waterfall, toward the pool).
@@ -263,7 +297,7 @@ function runPending() {
  */
 export function iconSprite(kind: IconKind, variant: number, style: IconStyle, px: number, look: IconLook = {}, now = false): Sprite | null {
   const level = LEVELS.find((l) => l >= px) ?? LEVELS[LEVELS.length - 1];
-  const base = `${style}|${kind}|${variant}|${look.dir ?? ''}`;
+  const base = `${style}|${kind}|${variant}|${look.dir ?? ''}|${style === 'painterly' ? (look.roof ?? '') : ''}`;
   const key = `${base}|${level}`;
   const hit = cache.get(key);
   if (hit) {
@@ -304,6 +338,8 @@ export interface Placement {
   variant: number;
   /** Waterfalls: the compass direction the water falls toward (drawn as the nearest of 8). */
   angle?: number;
+  /** Settlements: the roofs' color on the painterly map. */
+  color?: string;
   /** Set for icons placed by hand: the placed icon's ID. */
   placed?: string;
   /** Set for icons the app drew by itself: the key that names it (see MapInfo.hiddenAuto). */
@@ -318,12 +354,14 @@ export function placedToPlacement(p: PlacedIcon): Placement {
     for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) | 0;
     variant = Math.abs(h);
   }
-  return { x: p.x, y: p.y, size: p.size, set: p.kind, variant: variant % variantsOf(p.kind), angle: p.angle, placed: p.id };
+  return { x: p.x, y: p.y, size: p.size, set: p.kind, variant: variant % variantsOf(p.kind), angle: p.angle, color: p.color, placed: p.id };
 }
 
 /** Which drawing a placement uses: for a waterfall, the direction it falls toward. */
-export function placementLook(p: { set: IconKind; angle?: number }): IconLook {
-  return p.set === 'waterfall' ? { dir: dirOf(p) } : {};
+export function placementLook(p: { set: IconKind; angle?: number; color?: string }): IconLook {
+  if (p.set === 'waterfall') return { dir: dirOf(p) };
+  if (KINDS[p.set].group === 'settlements') return { roof: p.color };
+  return {};
 }
 
 /** The box around an icon's drawing, relative to its ground point, in map units. */

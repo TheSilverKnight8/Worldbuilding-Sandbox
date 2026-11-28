@@ -4,8 +4,9 @@ import { BookOpen, ChevronDown, Filter, Plus, Search, Trash2, X } from 'lucide-r
 import { alertDialog, confirmDialog } from '../components/dialogs';
 import { Button, Input, Segmented, cx } from '../components/ui';
 import { lookFor, onLookChange, setLook } from '../lib/session';
-import { addEntry, deleteEntry } from '../lib/store';
-import { ENTRY_KINDS, ERAS, KIND_LABEL, KIND_PLURAL, isEntryKind, kindOptions, type EntryKind, type FieldDef } from '../lib/world/entries';
+import { PLACE_KINDS, entryElevation } from '../lib/map/nodes';
+import { addEntry, deleteEntry, getMap, getMapVersion } from '../lib/store';
+import { ENTRY_KINDS, ERAS, KIND_LABEL, formatNumber, KIND_PLURAL, isEntryKind, kindOptions, type EntryKind, type FieldDef } from '../lib/world/entries';
 import type { WorldDoc } from '../lib/world/types';
 import { EntryPage, type Look } from './EntryPage';
 import { Thumb } from './Gallery';
@@ -19,10 +20,20 @@ export function EntriesView({ world, entryId }: { world: WorldDoc; entryId: stri
   const look: Look = useSyncExternalStore(onLookChange, () => lookFor(world.id));
   const [query, setQuery] = useState<EntryQuery>({ text: '', kind: 'all', fields: {} });
   const [showFilters, setShowFilters] = useState(false);
-  const hits = useMemo(() => searchEntries(world, query), [world, query]);
+  // A place entry's elevation, from the map at its first node (SPEC.md: filtered and compared by it).
+  const version = getMapVersion();
+  const elevationOf = useMemo(() => {
+    const data = getMap();
+    const memo = new Map<string, number | null>();
+    return (id: string) => {
+      if (!memo.has(id)) memo.set(id, entryElevation(world, data, version, id));
+      return memo.get(id)!;
+    };
+  }, [world, version]);
+  const hits = useMemo(() => searchEntries(world, query, elevationOf), [world, query, elevationOf]);
   const entry = entryId ? world.records[entryId] : undefined;
   const open = (id: string) => navigate(`/world/${world.id}/entries/${id}`);
-  const activeFilters = Object.values(query.fields).filter((f) => f.min !== undefined || f.max !== undefined || !!f.value).length;
+  const activeFilters = [...Object.values(query.fields), ...(query.elevation ? [query.elevation] : [])].filter((f) => f.min !== undefined || f.max !== undefined || !!f.value).length;
 
   const create = (kind: EntryKind) => {
     const r = addEntry(kind);
@@ -65,7 +76,7 @@ export function EntriesView({ world, entryId }: { world: WorldDoc; entryId: stri
               aria-label="Entry type"
               className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-raised px-2 text-sm"
               value={query.kind}
-              onChange={(e) => setQuery({ ...query, kind: e.target.value as EntryKind | 'all', fields: {} })}
+              onChange={(e) => setQuery({ ...query, kind: e.target.value as EntryKind | 'all', fields: {}, elevation: undefined })}
             >
               <option value="all">All types</option>
               {ENTRY_KINDS.map((k) => (
@@ -86,7 +97,15 @@ export function EntriesView({ world, entryId }: { world: WorldDoc; entryId: stri
               </button>
             )}
           </div>
-          {showFilters && query.kind !== 'all' && <Filters doc={world} kind={query.kind} fields={query.fields} onChange={(fields) => setQuery({ ...query, fields })} />}
+          {showFilters && query.kind !== 'all' && (
+            <Filters
+              doc={world}
+              kind={query.kind}
+              fields={query.fields}
+              elevation={query.elevation}
+              onChange={(fields, elevation) => setQuery({ ...query, fields, elevation })}
+            />
+          )}
           <NewEntry onPick={create} />
         </div>
         <p className="px-3 pt-2 text-xs text-muted" aria-live="polite">
@@ -110,7 +129,10 @@ export function EntriesView({ world, entryId }: { world: WorldDoc; entryId: stri
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{record.name || 'Untitled'}</span>
-                  <span className={cx('block truncate text-xs', record.id === entryId ? 'text-on-accent/80' : 'text-muted')}>{KIND_LABEL[record.kind]}</span>
+                  <span className={cx('block truncate text-xs', record.id === entryId ? 'text-on-accent/80' : 'text-muted')}>
+                    {KIND_LABEL[record.kind]}
+                    {PLACE_KINDS.includes(record.kind as EntryKind) && elevationOf(record.id) !== null && ` · ${formatNumber(elevationOf(record.id)!)} m`}
+                  </span>
                   {snippet && <span className={cx('mt-0.5 line-clamp-2 text-xs', record.id === entryId ? 'text-on-accent/80' : 'text-muted')}>{snippet}</span>}
                 </span>
               </button>
@@ -194,8 +216,21 @@ function NewEntry({ onPick }: { onPick: (k: EntryKind) => void }) {
 }
 
 /** Filters for the chosen type's fields: a range for numbers, sizes, eras and years; a choice for the rest. */
-function Filters({ doc, kind, fields, onChange }: { doc: WorldDoc; kind: EntryKind; fields: Record<string, FieldFilter>; onChange: (f: Record<string, FieldFilter>) => void }) {
-  const setF = (key: string, f: FieldFilter) => onChange({ ...fields, [key]: f });
+function Filters({
+  doc,
+  kind,
+  fields,
+  elevation,
+  onChange,
+}: {
+  doc: WorldDoc;
+  kind: EntryKind;
+  fields: Record<string, FieldFilter>;
+  elevation: FieldFilter | undefined;
+  onChange: (f: Record<string, FieldFilter>, elevation: FieldFilter | undefined) => void;
+}) {
+  const setF = (key: string, f: FieldFilter) => onChange({ ...fields, [key]: f }, elevation);
+  const ev = elevation ?? {};
   const num = (s: string) => (s.trim() && Number.isFinite(Number(s)) ? Number(s) : undefined);
   const row = (def: FieldDef, control: React.ReactNode) => (
     <label key={def.key} className="block space-y-1">
@@ -283,7 +318,16 @@ function Filters({ doc, kind, fields, onChange }: { doc: WorldDoc; kind: EntryKi
             return null;
         }
       })}
-      <button type="button" className="flex items-center gap-1 text-xs text-muted hover:text-ink" onClick={() => onChange({})}>
+      {PLACE_KINDS.includes(kind) && (
+        <label className="block space-y-1">
+          <span className="block text-xs text-muted">Elevation (m, from the map)</span>
+          <span className="flex items-center gap-1.5">
+            <input type="number" aria-label="Elevation at least" placeholder="At least" className={box} value={ev.min ?? ''} onChange={(e) => onChange(fields, { ...ev, min: num(e.target.value) })} />
+            <input type="number" aria-label="Elevation at most" placeholder="At most" className={box} value={ev.max ?? ''} onChange={(e) => onChange(fields, { ...ev, max: num(e.target.value) })} />
+          </span>
+        </label>
+      )}
+      <button type="button" className="flex items-center gap-1 text-xs text-muted hover:text-ink" onClick={() => onChange({}, undefined)}>
         <X className="size-3.5" />
         Clear filters
       </button>

@@ -1,5 +1,6 @@
 import type { Cliff, IconKind, PlacedIcon, TerrainKind } from '../world/types';
 import type { Dir } from './art/frame';
+import { SETTLEMENT_SIZE } from './art/settlements';
 import { cliffSteps } from './cliffs';
 import { across, cellAt, cellsNear, type Graph } from './graph';
 
@@ -16,7 +17,7 @@ type Effect = 'raise' | 'flat' | 'none';
 
 export interface KindInfo {
   label: string;
-  group: 'terrain' | 'plants' | 'water';
+  group: 'terrain' | 'plants' | 'water' | 'settlements';
   effect: Effect;
   /** Waterfalls fall toward one of 8 directions. */
   directional: boolean;
@@ -45,7 +46,19 @@ export const KINDS: Record<IconKind, KindInfo> = {
   dunes: { label: 'Dunes', group: 'plants', effect: 'none', directional: false, size: 1.2 },
   reeds: { label: 'Reeds', group: 'plants', effect: 'none', directional: false, size: 0.43 },
   waterfall: { label: 'Waterfall', group: 'water', effect: 'none', directional: true, size: 1.5 },
+  // Settlements (Stage 8): fixed sizes (Caleb), not by polygon.
+  farm: { label: 'Farm', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.farm },
+  village: { label: 'Village', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.village },
+  town: { label: 'Town', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.town },
+  city: { label: 'City', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.city },
+  'walled-city': { label: 'Walled city', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.walledCity },
+  castle: { label: 'Castle', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.castle },
+  port: { label: 'Port', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.port },
+  ruins: { label: 'Ruins', group: 'settlements', effect: 'none', directional: false, size: SETTLEMENT_SIZE.ruins },
 };
+
+/** The roofs' color of a new settlement on the painterly map. */
+export const DEFAULT_ROOF = '#a8553c';
 
 export const isTerrain = (k: IconKind): k is TerrainKind => KINDS[k].group === 'terrain';
 
@@ -108,13 +121,18 @@ export function computeHeights(g: Graph, land: Uint8Array, base: Int16Array, ico
 }
 
 /**
- * Cells under a terrain icon placed by hand: the plants of a biome (forest, grass...) are not
- * drawn there, so they do not crowd a mountain's slopes or a plateau's top.
+ * Cells under a terrain icon or a settlement placed by hand: the plants of a biome (forest,
+ * grass...) are not drawn there, so they do not crowd a mountain's slopes, a plateau's top or a town.
  */
 export function underTerrain(g: Graph, icons: PlacedIcon[]): Uint8Array {
   const covered = new Uint8Array(g.cellCount);
   for (const icon of icons) {
     const info = KINDS[icon.kind];
+    // A settlement: the ground it stands on.
+    if (info.group === 'settlements') {
+      cellsNear(g, icon.x, icon.y - icon.size * 0.2, icon.size * 0.42, (cell) => (covered[cell] = 1));
+      continue;
+    }
     if (info.effect === 'none') continue;
     if (info.effect === 'raise') {
       cellsNear(g, icon.x, icon.y - icon.size * 0.18, icon.size * 0.36, (cell) => (covered[cell] = 1));

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { Hand, Layers, Maximize, PaintBucket, Paintbrush, Redo2, Undo2 } from 'lucide-react';
 import { Input, Kbd, Segmented, cx } from '../components/ui';
-import { emitMap, getMap, mapEdited, setCliffs, setPlacedIcons, setRivers } from '../lib/store';
+import { addEntry, emitMap, getMap, mapEdited, setCliffs, setPlacedIcons, setRivers, setTexts } from '../lib/store';
+import type { NodeTarget } from '../lib/map/nodes';
+import type { EntryKind } from '../lib/world/entries';
+import { NodesPanel } from './NodesPanel';
 import { lookFor, onLookChange, setLook } from '../lib/session';
 import { newId } from '../lib/ids';
 import { biomeFields, slotLooks, type SlotLook } from '../lib/map/biomes';
@@ -11,18 +15,20 @@ import { OVERLAY, type MapStyle } from '../lib/map/render';
 import { variantsOf, type Placement } from '../lib/map/icons';
 import { cliffLength } from '../lib/map/cliffs';
 import { defaultRiverWidth, riverLength } from '../lib/map/rivers';
-import { ELEVATION_MAX, KINDS, SIZED_BY_POLYGON, footOffset, iconCell, polygonScale } from '../lib/map/terrain';
+import { DEFAULT_ROOF, ELEVATION_MAX, KINDS, SIZED_BY_POLYGON, footOffset, iconCell, polygonScale } from '../lib/map/terrain';
 import { placedToPlacement } from '../lib/map/scene';
-import type { Cliff, IconKind, MapInfo, PlacedIcon, River, WorldDoc } from '../lib/world/types';
+import type { Cliff, IconKind, MapInfo, MapText, PlacedIcon, River, TextKind, WorldDoc } from '../lib/world/types';
+import { TEXT_STYLES } from '../lib/map/text';
+import { TextPanel } from './TextPanel';
 import { BiomePanel } from './BiomePanel';
 import { IconsPanel, type IconSettings } from './IconsPanel';
 import { CliffsPanel } from './CliffsPanel';
-import { MapCanvas, type CliffTool, type Hover, type IconTool, type MapCanvasHandle, type RiverTool, type Tool } from './MapCanvas';
+import { MapCanvas, type CliffTool, type Hover, type IconTool, type MapCanvasHandle, type RiverTool, type TextTool, type Tool } from './MapCanvas';
 import { RiversPanel } from './RiversPanel';
 
-type Mode = PaintMode | 'rivers' | 'cliffs' | 'icons';
+type Mode = PaintMode | 'rivers' | 'cliffs' | 'icons' | 'text' | 'nodes';
 /** Modes where clicks on the map draw, place or select instead of painting. */
-const clicking = (m: Mode) => m === 'icons' || m === 'rivers' || m === 'cliffs';
+const clicking = (m: Mode) => m === 'icons' || m === 'rivers' || m === 'cliffs' || m === 'text' || m === 'nodes';
 
 const km = (n: number) => `${Math.round(n).toLocaleString()} km`;
 /** A size in km: whole km above 10, one decimal below. */
@@ -86,6 +92,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
       sizeKm: KINDS[k].size * graph.spacing * kmPerUnit,
       meters: KINDS[k].meters?.value,
       angle: KINDS[k].directional ? 180 : undefined,
+      color: KINDS[k].group === 'settlements' ? DEFAULT_ROOF : undefined,
     }),
     [graph.spacing, kmPerUnit],
   );
@@ -147,6 +154,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
       };
       if (iconSettings.meters !== undefined && KINDS[iconKind].meters) icon.meters = iconSettings.meters;
       if (KINDS[iconKind].directional) icon.angle = iconSettings.angle ?? 180;
+      if (KINDS[iconKind].group === 'settlements') icon.color = iconSettings.color ?? DEFAULT_ROOF;
       const replaced = there?.id;
       changeIcons([...(replaced ? map.icons.filter((i) => i.id !== replaced) : map.icons), icon]);
       setSelectedIcon(icon.id);
@@ -177,13 +185,14 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
   }, [selectedIcon, map.icons, changeIcons]);
 
   const selectedSettings: IconSettings | null = selected
-    ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle ?? (KINDS[selected.kind].directional ? 180 : undefined) }
+    ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle ?? (KINDS[selected.kind].directional ? 180 : undefined), color: KINDS[selected.kind].group === 'settlements' ? (selected.color ?? DEFAULT_ROOF) : undefined }
     : null;
   const editSelected = (s: IconSettings) => {
     if (!selected) return;
     const next: PlacedIcon = { ...selected, size: Math.max(0.05, s.sizeKm / kmPerUnit) };
     if (KINDS[selected.kind].meters && s.meters !== undefined) next.meters = s.meters;
     if (KINDS[selected.kind].directional) next.angle = s.angle ?? 180;
+    if (KINDS[selected.kind].group === 'settlements') next.color = s.color ?? DEFAULT_ROOF;
     changeIcons(
       map.icons.map((i) => (i.id === selected.id ? next : i)),
       `edit ${selected.id}`,
@@ -263,6 +272,91 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
   }, [selectedCliff, map.cliffs, changeCliffs]);
   const cliffLengthKm = cliff ? cliffLength(graph, cliff) * kmPerUnit : 0;
 
+  // ------------------------------------------------------------ map text (Stage 8)
+
+  const [textTool, setTextTool] = useState<TextTool>('add');
+  const [textKind, setTextKind] = useState<TextKind>('region');
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const textItem = selectedText ? (map.texts.find((t) => t.id === selectedText) ?? null) : null;
+  useEffect(() => {
+    if (selectedText && !textItem) setSelectedText(null);
+  }, [selectedText, textItem]);
+  useEffect(() => {
+    if (mode !== 'text') setSelectedText(null);
+  }, [mode]);
+  /** Changes the map's text and adds the change to the undo history (changes with the same key less than a second apart are one step). */
+  const changeTexts = useCallback(
+    (next: MapText[], key?: string) => {
+      const before = map.texts;
+      setTexts(next);
+      painter.push({ undo: () => setTexts(before), redo: () => setTexts(next), key });
+    },
+    [map.texts, painter],
+  );
+  const addText = useCallback(
+    (x: number, y: number, curve?: [number, number][]) => {
+      const t: MapText = { id: newId(), kind: textKind, text: TEXT_STYLES[textKind].label, x, y };
+      if (curve) t.curve = curve;
+      changeTexts([...map.texts, t]);
+      setSelectedText(t.id);
+    },
+    [map.texts, changeTexts, textKind],
+  );
+  const patchText = useCallback(
+    (patch: Partial<MapText>, key?: string) => {
+      if (!selectedText) return;
+      changeTexts(
+        map.texts.map((t) => (t.id === selectedText ? { ...t, ...patch } : t)),
+        key,
+      );
+    },
+    [selectedText, map.texts, changeTexts],
+  );
+  const deleteText = useCallback(() => {
+    if (!selectedText) return;
+    changeTexts(map.texts.filter((t) => t.id !== selectedText));
+    setSelectedText(null);
+  }, [selectedText, map.texts, changeTexts]);
+
+  // ------------------------------------------------------------ nodes (Stage 8)
+
+  const [selectedNode, setSelectedNode] = useState<NodeTarget | null>(null);
+  const nodeExists = selectedNode ? (selectedNode.kind === 'icon' ? map.icons.some((i) => i.id === selectedNode.id) : map.texts.some((t) => t.id === selectedNode.id)) : false;
+  useEffect(() => {
+    if (selectedNode && !nodeExists) setSelectedNode(null);
+  }, [selectedNode, nodeExists]);
+  useEffect(() => {
+    if (mode !== 'nodes') setSelectedNode(null);
+  }, [mode]);
+  /** Links the picked icon or text to an entry (or unlinks it), as one undo step. */
+  const setNodeEntry = useCallback(
+    (t: NodeTarget, entry: string | undefined) => {
+      const put = <T extends { id: string; entry?: string }>(x: T): T => {
+        if (x.id !== t.id) return x;
+        const n = { ...x };
+        if (entry) n.entry = entry;
+        else delete n.entry;
+        return n;
+      };
+      if (t.kind === 'icon') changeIcons(map.icons.map(put));
+      else changeTexts(map.texts.map(put));
+    },
+    [map.icons, map.texts, changeIcons, changeTexts],
+  );
+
+  // Coming from an entry's "Show on the map": the map centered on that node, picked in Nodes mode.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const focus = (location.state as { focus?: { x: number; y: number; node?: NodeTarget } } | null)?.focus;
+    if (!focus || !active) return;
+    setMode('nodes');
+    if (focus.node) setSelectedNode(focus.node);
+    // After the mode's layout has settled.
+    requestAnimationFrame(() => canvas.current?.focus(focus.x, focus.y));
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.key, location.state, location.pathname, active, navigate]);
+
   // ------------------------------------------------------------ picking and keys
 
   const selectBiome = useCallback((id: string | null) => {
@@ -310,10 +404,15 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
       } else if (mode === 'cliffs' && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         deleteCliff();
+      } else if (mode === 'text' && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        deleteText();
       } else if (e.key === 'Escape') {
         setSelectedIcon(null);
         setSelectedRiver(null);
         setSelectedCliff(null);
+        setSelectedText(null);
+        setSelectedNode(null);
       }
       else if (k === 'b') setTool('brush');
       else if (k === 'f') setTool('fill');
@@ -326,7 +425,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [painter, mode, deleteSelected, deleteRiver, deleteCliff, active]);
+  }, [painter, mode, deleteSelected, deleteRiver, deleteCliff, deleteText, active]);
 
   // Fill has nothing to do in Elevation mode.
   useEffect(() => {
@@ -353,6 +452,8 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
               { value: 'rivers', label: 'Rivers' },
               { value: 'cliffs', label: 'Cliffs' },
               { value: 'icons', label: 'Icons' },
+              { value: 'text', label: 'Text' },
+              { value: 'nodes', label: 'Nodes' },
             ]}
           />
           {mode === 'land' && (
@@ -423,6 +524,21 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
               />
               <span className="text-sm text-muted">{cliffTool === 'draw' ? 'Drag along the cliff; the drop is on your right.' : 'Click a cliff to select it.'}</span>
             </>
+          ) : mode === 'text' ? (
+            <>
+              <Segmented<TextTool>
+                value={textTool}
+                onChange={setTextTool}
+                size="sm"
+                options={[
+                  { value: 'add', label: 'Add', title: 'Click to add text; drag along a line to add text that follows it' },
+                  { value: 'select', label: 'Select', title: 'Click text to select it; drag it to move it' },
+                ]}
+              />
+              <span className="text-sm text-muted">{textTool === 'add' ? 'Click to add text, or drag along a line.' : 'Click text to select it; drag to move it.'}</span>
+            </>
+          ) : mode === 'nodes' ? (
+            <span className="text-sm text-muted">Click an icon or text to make it a node, or to see the entry it stands for.</span>
           ) : mode === 'icons' ? (
             <>
               <Segmented<IconTool>
@@ -501,6 +617,16 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
             selectedCliff={selectedCliff}
             onAddCliff={addCliff}
             onSelectCliff={setSelectedCliff}
+            texts={map.texts}
+            textMode={mode === 'text'}
+            textTool={textTool}
+            selectedText={selectedText}
+            onAddText={addText}
+            onSelectText={setSelectedText}
+            onMoveText={(id, x, y) => changeTexts(map.texts.map((t) => (t.id === id ? { ...t, x, y } : t)))}
+            nodeMode={mode === 'nodes'}
+            selectedNode={selectedNode}
+            onPickNode={setSelectedNode}
             selectedIcon={selectedIcon}
             brush={brush}
             tool={clicking(mode) ? 'brush' : tool}
@@ -599,6 +725,42 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
           onFlip={() => cliff && changeCliffs(map.cliffs.map((c) => (c.id === cliff.id ? { ...c, vertices: [...c.vertices].reverse() } : c)))}
           onDelete={deleteCliff}
           onDeselect={() => setSelectedCliff(null)}
+        />
+      ) : mode === 'nodes' ? (
+        <NodesPanel
+          world={world}
+          map={map}
+          target={selectedNode}
+          onCreate={(kind: EntryKind, name: string) => {
+            if (!selectedNode) return;
+            const res = addEntry(kind, name);
+            if (res.ok) setNodeEntry(selectedNode, res.value);
+          }}
+          onLink={(id) => selectedNode && setNodeEntry(selectedNode, id)}
+          onUnlink={() => selectedNode && setNodeEntry(selectedNode, undefined)}
+          onDeselect={() => setSelectedNode(null)}
+        />
+      ) : mode === 'text' ? (
+        <TextPanel
+          tool={textTool}
+          kind={textKind}
+          onKind={setTextKind}
+          selected={textItem}
+          onChange={patchText}
+          onStraighten={() => {
+            if (!textItem?.curve) return;
+            // Straight, turned as the line ran from end to end.
+            const c = textItem.curve;
+            const [a, b] = [c[0], c[c.length - 1]];
+            let angle = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+            if (angle > 90) angle -= 180;
+            if (angle < -90) angle += 180;
+            const next: MapText = { ...textItem, angle: (Math.round(angle) + 360) % 360 };
+            delete next.curve;
+            changeTexts(map.texts.map((t) => (t.id === textItem.id ? next : t)));
+          }}
+          onDelete={deleteText}
+          onDeselect={() => setSelectedText(null)}
         />
       ) : mode === 'icons' ? (
         <IconsPanel

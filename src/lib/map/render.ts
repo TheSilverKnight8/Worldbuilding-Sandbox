@@ -6,6 +6,8 @@ import { beginIconFrame, iconSprite, minPixels, placementLook, type IconStyle, t
 import type { NoisyEdges } from './noisy';
 import type { RiverShape } from './rivers';
 import { HATCH_TIERS, type CliffDrawing } from './cliffs';
+import { drawTexts } from './text';
+import type { MapText } from '../world/types';
 import { PAPER_TILE_PIXELS, PAPER_TILE_UNITS, paperTexture } from './paper';
 
 // Draws the map with the browser's 2D canvas, in map units, in one of two looks:
@@ -50,6 +52,10 @@ export const ATLAS = {
   frame: 1.4,
 };
 
+/** Map text: the ink, and the soft edge behind it. */
+const ATLAS_TEXT = { ink: '#2a241c', edge: 'rgba(240, 228, 200, 0.42)' };
+const PAINTERLY_TEXT = { ink: '#2e2618', edge: 'rgba(250, 240, 215, 0.55)' };
+
 export const PAINTERLY = {
   /** A cliff's rock face, darker toward its rim, and its ink. */
   cliffFace: '#b3a383',
@@ -93,6 +99,8 @@ export interface Scene {
   rivers: RiverShape[];
   /** The cliffs (along polygon borders), north first. */
   cliffs: CliffDrawing[];
+  /** Text on the map (Stage 8), drawn over everything else. */
+  texts?: MapText[];
   noisy: NoisyEdges;
 }
 
@@ -214,6 +222,15 @@ export class MapRenderer {
     }
 
     this.drawIcons(view, dpr, scene, style, quick);
+
+    // Text over everything, with a soft paper-colored edge so it reads over icons.
+    if (scene.texts?.length) {
+      ctx.save();
+      ctx.setTransform(s, 0, 0, s, view.x * dpr, view.y * dpr);
+      ctx.clip(rect);
+      drawTexts(ctx, scene.texts, g.spacing, style === 'atlas' ? ATLAS_TEXT : PAINTERLY_TEXT, s);
+      ctx.restore();
+    }
 
     // Frame.
     ctx.setTransform(s, 0, 0, s, view.x * dpr, view.y * dpr);

@@ -103,6 +103,30 @@ export interface MapInfo {
   rivers: River[];
   /** Cliffs, along polygon borders (format 8; before, cliffs were icons). */
   cliffs: Cliff[];
+  /** Text on the map (Stage 8), drawn in the order listed (later ones on top). */
+  texts: MapText[];
+}
+
+/** The kinds of map text, as in Nortantis (Caleb), each with its own font and size. */
+export type TextKind = 'title' | 'region' | 'range' | 'mountain' | 'city' | 'lake' | 'river' | 'road';
+
+/** A piece of text on the map (Stage 8). */
+export interface MapText {
+  id: string;
+  kind: TextKind;
+  /** The words; a line break starts a new line (straight text only). */
+  text: string;
+  /** Its middle, in map units. */
+  x: number;
+  y: number;
+  /** Straight text: turned this many degrees clockwise. */
+  angle?: number;
+  /** Its size, as a multiple of its kind's size. */
+  scale?: number;
+  /** Curved text: the line it follows, in map units from (x, y). */
+  curve?: [number, number][];
+  /** A node (Stage 8): the ID of the entry this text stands for on the map. */
+  entry?: string;
 }
 
 /**
@@ -146,11 +170,15 @@ export type IconSet = 'deciduous' | 'pine' | 'jungle' | 'cactus' | 'shrub' | 'gr
  */
 export type TerrainKind = 'hill' | 'mountain' | 'volcano' | 'plateau';
 
-/** Anything that can be placed as a single icon: terrain, a biome's plants and ground, or a waterfall (Stage 5). */
-export type IconKind = TerrainKind | Exclude<IconSet, 'none'> | 'waterfall';
+/** Settlement icons (Stage 8), picked by hand when placing. */
+export type SettlementKind = 'farm' | 'village' | 'town' | 'city' | 'walled-city' | 'castle' | 'port' | 'ruins';
+export const SETTLEMENT_KINDS: readonly SettlementKind[] = ['farm', 'village', 'town', 'city', 'walled-city', 'castle', 'port', 'ruins'];
+
+/** Anything that can be placed as a single icon: terrain, a biome's plants and ground, a waterfall (Stage 5) or a settlement (Stage 8). */
+export type IconKind = TerrainKind | Exclude<IconSet, 'none'> | 'waterfall' | SettlementKind;
 
 export const TERRAIN_KINDS: readonly TerrainKind[] = ['mountain', 'hill', 'volcano', 'plateau'];
-export const ICON_KINDS: readonly IconKind[] = [...TERRAIN_KINDS, 'deciduous', 'pine', 'jungle', 'cactus', 'shrub', 'grass', 'dunes', 'reeds', 'waterfall'];
+export const ICON_KINDS: readonly IconKind[] = [...TERRAIN_KINDS, 'deciduous', 'pine', 'jungle', 'cactus', 'shrub', 'grass', 'dunes', 'reeds', 'waterfall', ...SETTLEMENT_KINDS];
 
 /**
  * An icon placed by hand. It stays exactly where Caleb put it. Terrain icons also shape
@@ -170,6 +198,10 @@ export interface PlacedIcon {
   angle?: number;
   /** Meters: the top of a hill, mountain, volcano or plateau. */
   meters?: number;
+  /** Settlements: the roofs' color on the painterly map, #rrggbb (Caleb: chosen for each). */
+  color?: string;
+  /** A node (Stage 8): the ID of the entry this icon stands for on the map. */
+  entry?: string;
 }
 
 /** A biome's structured fields. Biomes are for land only. */
