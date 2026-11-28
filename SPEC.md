@@ -49,6 +49,7 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 - Land has elevation. It matters for worldbuilding, especially for designing military campaigns, because elevation often decides battles.
 - Placing terrain icons shapes the elevation. Shaping the elevation does not place icons: only icons placed by hand are drawn, or by random generation, which places them the same way (so they can be moved, resized or deleted).
 - Icons come before elevation. A terrain icon placed by hand stays exactly where I put it, and the elevation under it reads at least that icon's height, whatever is painted around it.
+- Icons are placed as in Nortantis: in the middle of the polygon I click, one per polygon. Clicking a polygon that already has one rerolls its drawing; placing another kind there replaces it. A polygon that a neighbor's icon only reaches over can take its own, with the one in front drawn on top. Mountains, hills and volcanoes are sized by their polygon, whether placed by hand or generated.
 - Terrain icons, starter set: hills, mountains, volcanoes, plateaus, cliffs. (Valleys and passes are not needed; canyons are dropped for now, since cliffs cover a drop.) Cliffs and waterfalls face any of the 8 compass directions, each drawn as seen from that side.
 - Rivers, lakes and waterfalls follow the elevation. Random generation uses it too: rivers run downhill, mountains follow ridges.
 - Rivers are either drawn by hand, exactly where I put them, or routed downhill by the app from a source I click. Lakes are water painted inside land. A waterfall appears where a river crosses a cliff, and waterfalls can also be placed by hand.
@@ -122,7 +123,7 @@ Most implementation is left to code's judgement. Decided so far:
 
 - **Stack:** the same as my other apps (React, TypeScript, Vite, Tailwind, installable web app).
 - **Existing work:** Stage 1 (worlds, autosave, export/import, 3 worlds, the app's style) stays as the foundation. The first version's map branch (`stage-2-map`, a square grid) is not merged; the polygon map replaces it.
-- **Polygons:** a Voronoi polygon map (with a small, openly licensed library such as d3-delaunay), evened out with Lloyd relaxation. The world stores the polygons themselves, not just a random seed, so later changes to the generator never change an existing map.
+- **Polygons:** a Voronoi polygon map (with a small, openly licensed library such as d3-delaunay), evened out with one pass of Lloyd relaxation, as Nortantis does, so polygons vary in size as much as Nortantis's. The world stores the polygons themselves, not just a random seed, so later changes to the generator never change an existing map.
 - **Coastlines and borders:** noisy edges, written for this app from Amit Patel's published description (Red Blob Games).
 - **Icons:** drawn in code as a swappable set, so hand-drawn art could replace them later.
 - **Left to the stages:** the drawing technology and the number of polygons per map are decided in Stage 2 and written down in `docs/decisions.md`, for me to test.
