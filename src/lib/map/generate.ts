@@ -1,9 +1,9 @@
 import { newId } from '../ids';
 import { mixSeed, seededRandom } from '../rng';
-import type { CliffShape, PlacedIcon, River, TerrainKind } from '../world/types';
+import type { Cliff, PlacedIcon, River, TerrainKind } from '../world/types';
 import { across, cellAt, cellsNear, type Graph } from './graph';
 import { corners, drainage } from './rivers';
-import { KINDS, cliffTurn, computeHeights, footOffset, polygonScale } from './terrain';
+import { KINDS, computeHeights, footOffset, polygonScale } from './terrain';
 
 // Random generation (Stage 6): a whole map made once, at setup, then edited by hand. It is
 // the app's own code, using general techniques (none of Nortantis's code):
@@ -14,9 +14,10 @@ import { KINDS, cliffTurn, computeHeights, footOffset, polygonScale } from './te
 //    amount of land asked for is above it. Specks of land and puddles are tidied away.
 // 2. Elevation: low near the coast, rising inland, with the ridges as mountain ranges.
 // 3. Lakes: a few hollows inland filled with water.
-// 4. Terrain icons, stored like icons placed by hand (Caleb): plateaus and lines of cliffs
-//    (facing north or south) first, then volcanoes, then mountains and hills along the high ground, each sized by its
-//    polygon as Nortantis does and spaced across a range.
+// 4. Terrain, stored like what is made by hand (Caleb): plateaus and cliffs first (cliffs
+//    along polygon borders: escarpments inland, dropping to the lower side, and some along
+//    the shores of the sea and lakes), then volcanoes, then mountains and hills along the high
+//    ground, each sized by its polygon as Nortantis does and spaced across a range.
 // 5. Rivers: rain gathers downhill (over the elevation the icons shape); where enough has
 //    gathered it is a river. Each river runs from its source to the sea, or into a bigger
 //    river; widths grow with the water they carry. Rivers pass through lakes (drawn on land only).
@@ -51,6 +52,7 @@ export interface GeneratedMap {
   elevation: Int16Array;
   icons: PlacedIcon[];
   rivers: River[];
+  cliffs: Cliff[];
 }
 
 // ------------------------------------------------------------------ helpers
@@ -454,34 +456,111 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
     icons.push({ id: newId(), kind: 'plateau', x: cx(c), y: cy(c) + size * 0.15, size, variant: variant('plateau'), meters: Math.round(high + 250 + rand() * 350) });
     cover(cx(c), cy(c), size * 0.9);
   }
-  // Cliffs: escarpments, a few cliffs end to end facing one way, fading out at both ends.
+  // Cliffs, along polygon borders: escarpments inland, wandering one way, with the drop on the lower side.
+  const cliffs: Cliff[] = [];
+  const K0 = corners(g);
+  const vx = (v: number) => g.vertices[v * 2];
+  const vy = (v: number) => g.vertices[v * 2 + 1];
+  const cornerOf = (c: number) => g.edges[g.cellEdges[g.cellEdgeStart[c]] * 4];
+  const cellsOf = (v: number) => [0, 1, 2, 3].map((i) => K0.cells[v * 4 + i]).filter((c) => c >= 0);
+  const inland = (v: number) => cellsOf(v).every((c) => land[c] && !covered[c] && water[c] >= 2);
+  // Average elevation of the cells within 2 spacings on the right of a chain (the drop side) less that on its left.
+  const rightIsLower = (chain: number[]) => {
+    let right = 0;
+    let left = 0;
+    let nr = 0;
+    let nl = 0;
+    for (let i = 1; i < chain.length; i++) {
+      const [ax, ay, bx, by] = [vx(chain[i - 1]), vy(chain[i - 1]), vx(chain[i]), vy(chain[i])];
+      const len = Math.hypot(bx - ax, by - ay) || 1;
+      const [nx, ny] = [-(by - ay) / len, (bx - ax) / len];
+      cellsNear(g, (ax + bx) / 2, (ay + by) / 2, sp * 2, (c) => {
+        if (!land[c]) return;
+        const side = (cx(c) - (ax + bx) / 2) * nx + (cy(c) - (ay + by) / 2) * ny;
+        if (side > 0) {
+          right += elevation[c];
+          nr++;
+        } else {
+          left += elevation[c];
+          nl++;
+        }
+      });
+    }
+    return right / (nr || 1) <= left / (nl || 1);
+  };
+  const walk = (start: number, length: number, ok: (from: number, to: number) => boolean, wander: number) => {
+    const chain = [start];
+    const seen = new Set(chain);
+    let heading = rand() * Math.PI * 2;
+    for (let step = 0; step < length; step++) {
+      const v = chain[chain.length - 1];
+      let best = -1;
+      let bs = -Infinity;
+      for (let i = K0.start[v]; i < K0.start[v + 1]; i++) {
+        const n = K0.next[i];
+        if (seen.has(n) || !ok(v, n)) continue;
+        const a = Math.atan2(vy(n) - vy(v), vx(n) - vx(v));
+        const score = Math.cos(a - heading) + rand() * 0.3;
+        if (score > bs) {
+          bs = score;
+          best = n;
+        }
+      }
+      if (best < 0 || bs < -0.2) break;
+      heading = Math.atan2(vy(best) - vy(v), vx(best) - vx(v)) * 0.5 + heading * 0.5 + (rand() - 0.5) * wander;
+      chain.push(best);
+      seen.add(best);
+    }
+    return chain;
+  };
+  const coverChain = (chain: number[]) => {
+    for (const v of chain) for (const c of cellsOf(v)) covered[c] = 1;
+  };
   const escarpments = Math.round(mountains * 1.5 + rand() * 2);
   for (let i = 0; i < escarpments; i++) {
     const c = pick((c) => land[c] === 1 && !covered[c] && water[c] >= 3 && elevation[c] <= 1500 && ridge[c] < 0.3);
     if (c < 0) break;
-    // Facing north or south, with the rim across the page: at the scale of a whole map, slanting
-    // cliffs read as streaks and east- or west-facing ones as thin lines. (Any direction by hand.)
-    const angle = rand() < 0.5 ? 0 : 180;
-    const turn = (cliffTurn({ angle }) * Math.PI) / 180;
-    const [tx, ty] = [Math.cos(turn), Math.sin(turn)];
-    const size = KINDS.cliff.size * sp * (0.9 + rand() * 0.25);
-    const n = 2 + Math.floor(rand() * 3);
-    const drop = Math.round(150 + rand() * 350);
-    const chain: PlacedIcon[] = [];
-    for (let k = 0; k < n; k++) {
-      const x = cx(c) + tx * size * 0.82 * (k - (n - 1) / 2);
-      const y = cy(c) + ty * size * 0.82 * (k - (n - 1) / 2);
-      const at = cellAt(g, x, y);
-      if (at < 0 || !land[at] || covered[at] || water[at] < 2) break;
-      const shape: CliffShape = k === 0 ? 'taper-left' : 'even';
-      chain.push({ id: newId(), kind: 'cliff', x, y, size, variant: variant('cliff'), angle, shape, meters: drop });
+    const chain = walk(cornerOf(c), 8 + Math.floor(rand() * 12), (_, n) => inland(n), 0.5);
+    if (chain.length < 6) continue;
+    cliffs.push({ id: newId(), vertices: rightIsLower(chain) ? chain : [...chain].reverse(), meters: Math.round(150 + rand() * 350) });
+    coverChain(chain);
+  }
+  // Sea cliffs: along a stretch of the shore of the sea or a lake, dropping to the water (Caleb).
+  // A few here; more are placed where rivers reach the water, once the rivers are made (below).
+  const coastal = Math.round(rand() * 1.5);
+  // The drop toward the water: on the right of a chain along the shore.
+  const towardWater = (chain: number[]) => {
+    const [a, b] = [chain[0], chain[1]];
+    const wet = cellsOf(a).find((q) => !land[q] && cellsOf(b).includes(q));
+    const [ax, ay, bx, by] = [vx(a), vy(a), vx(b), vy(b)];
+    const toWater = wet === undefined ? 0 : (cx(wet) - (ax + bx) / 2) * -(by - ay) + (cy(wet) - (ay + by) / 2) * (bx - ax);
+    return toWater >= 0 ? chain : [...chain].reverse();
+  };
+  const shoreEdge = (a: number, b: number) => {
+    for (let i = K0.start[a]; i < K0.start[a + 1]; i++) {
+      if (K0.next[i] !== b) continue;
+      const e = K0.edge[i];
+      const c0 = g.edges[e * 4 + 2];
+      const c1 = g.edges[e * 4 + 3];
+      return c0 >= 0 && c1 >= 0 && land[c0] !== land[c1] && !covered[land[c0] ? c0 : c1];
     }
-    if (chain.length < 2) continue;
-    chain[chain.length - 1].shape = 'taper-right';
-    for (const p of chain) {
-      icons.push(p);
-      cover(p.x, p.y, p.size * 0.6);
+    return false;
+  };
+  for (let i = 0; i < coastal; i++) {
+    const c = pick((c) => land[c] === 1 && !covered[c] && water[c] === 1 && elevation[c] >= 60);
+    if (c < 0) break;
+    // A corner of this cell on the shore.
+    let start = -1;
+    for (let k = g.cellEdgeStart[c]; k < g.cellEdgeStart[c + 1] && start < 0; k++) {
+      const e = g.cellEdges[k];
+      const o = across(g, e, c);
+      if (o >= 0 && !land[o]) start = g.edges[e * 4];
     }
+    if (start < 0) continue;
+    const chain = walk(start, 6 + Math.floor(rand() * 9), shoreEdge, 1.2);
+    if (chain.length < 5) continue;
+    cliffs.push({ id: newId(), vertices: towardWater(chain), meters: Math.round(80 + rand() * 220) });
+    coverChain(chain);
   }
   // Volcanoes: a few, on high ground near a coast where plates push together, or alone on islands.
   const volcanoes = Math.round((settings.shape === 'islands' ? 1.5 : 0.5) + mountains * 1.5 + rand() * 1.5);
@@ -532,7 +611,7 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
   }
 
   // --- 5. Rivers
-  const heights = computeHeights(g, land, elevation, icons);
+  const heights = computeHeights(g, land, elevation, icons, cliffs);
   // Moisture before rivers (rain): from the sea, less inland and behind mountains (winds from the west).
   const seaSteps = stepsFrom(g, nb, (c) => !land[c] && !isLake[c]);
   const wet = gradientNoise(mixSeed(seed, 4));
@@ -557,7 +636,7 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
   // ...along the borders between polygons, from corner to corner (rivers follow borders, as in Nortantis).
   const K = corners(g);
   const V = K.count;
-  const down = drainage(g, flowLand, flowHeights);
+  const down = drainage(g, flowLand, flowHeights, cliffs);
   // Rain falls on each polygon and is shared among its corners.
   const gathered = new Float32Array(V);
   for (let c = 0; c < N; c++) {
@@ -655,6 +734,45 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
     rivers.push({ id: newId(), vertices: p.corners, width: Math.max(sp * 0.05, k * Math.sqrt(Math.max(own, 1))) });
   }
 
+  // Sea cliffs where some of the bigger rivers reach the sea or a lake, so they fall into the
+  // water (Caleb): along the shore either side of the river's mouth. (Placed once the rivers are
+  // made, so they do not turn the rivers aside.)
+  const falls = Math.round(1 + mountains * 2 + rand() * 2);
+  const byWidth = [...rivers].sort((a, b) => b.width - a.width);
+  let placedFalls = 0;
+  for (const r of byWidth) {
+    if (placedFalls >= falls) break;
+    const mouth = r.vertices[r.vertices.length - 1];
+    const before = r.vertices[r.vertices.length - 2];
+    const shore = cellsOf(mouth);
+    if (!shore.some((c) => land[c]) || !shore.some((c) => !land[c]) || rand() < 0.35) continue;
+    // Along the shore both ways from the mouth.
+    const along = (from: number, not: Set<number>, steps: number) => {
+      const out: number[] = [];
+      let v = from;
+      for (let k = 0; k < steps; k++) {
+        let next = -1;
+        for (let i = K0.start[v]; i < K0.start[v + 1] && next < 0; i++) {
+          const n = K0.next[i];
+          if (!not.has(n) && shoreEdge(v, n)) next = n;
+        }
+        if (next < 0) break;
+        out.push(next);
+        not.add(next);
+        v = next;
+      }
+      return out;
+    };
+    const seen = new Set([mouth, before]);
+    const left = along(mouth, seen, 2 + Math.floor(rand() * 4));
+    const right = along(mouth, seen, 2 + Math.floor(rand() * 4));
+    const chain = [...left.reverse(), mouth, ...right];
+    if (chain.length < 4 || r.vertices.slice(0, -1).some((v) => chain.includes(v))) continue;
+    cliffs.push({ id: newId(), vertices: towardWater(chain), meters: Math.round(80 + rand() * 220) });
+    coverChain(chain);
+    placedFalls++;
+  }
+
   // --- 6. Biomes
   // Polygons a river runs beside.
   const byRiver = new Uint8Array(N);
@@ -692,5 +810,5 @@ export function generateMap(g: Graph, widthKm: number, heightKm: number, setting
     if (same === 0 && tally.size) biome[c] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0][0];
   }
 
-  return { land, biome, elevation, icons, rivers };
+  return { land, biome, elevation, icons, rivers, cliffs };
 }

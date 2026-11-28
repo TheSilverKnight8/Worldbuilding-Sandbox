@@ -7,18 +7,22 @@ import { buildCoast, type Coast } from '../lib/map/coast';
 import { cellAt, type Graph } from '../lib/map/graph';
 import { iconBox, iconHit, minPixels, onSpritesReady, placementLook, type Placement } from '../lib/map/icons';
 import { NoisyEdges } from '../lib/map/noisy';
+import { borderLine } from '../lib/map/borders';
+import { cliffAt, cliffDrawings, cliffWaterfalls, riversAtFalls, snapCliff, type AutoWaterfall, type CliffDrawing } from '../lib/map/cliffs';
 import { riverAt, riverShapes, routeRiver, snapLine, type RiverShape } from '../lib/map/rivers';
 import { mapIcons, placedToPlacement } from '../lib/map/scene';
 import type { Brush, MapPainter } from '../lib/map/paint';
 import { MapRenderer, type MapStyle, type View } from '../lib/map/render';
 import { computeHeights } from '../lib/map/terrain';
-import type { PlacedIcon, River } from '../lib/world/types';
+import type { Cliff, PlacedIcon, River } from '../lib/world/types';
 
 export type Tool = 'brush' | 'fill' | 'hand';
 /** In Icons mode: place new icons, or select any icon (the app's own ones included). */
 export type IconTool = 'place' | 'select';
 /** In Rivers mode: draw a river by hand, click a source to route one downhill, or select one. */
 export type RiverTool = 'draw' | 'route' | 'select';
+/** In Cliffs mode: draw a cliff along borders, or select one. */
+export type CliffTool = 'draw' | 'select';
 
 /** What is under the cursor: map position (map units), the cell, and what is there. */
 export interface Hover {
@@ -58,6 +62,14 @@ interface Props {
   /** A new river: its chain of polygon corners, from source to mouth. */
   onAddRiver: (vertices: number[]) => void;
   onSelectRiver: (id: string | null) => void;
+  cliffs: Cliff[];
+  /** Cliffs mode: clicks draw and select cliffs instead of painting. */
+  cliffMode: boolean;
+  cliffTool: CliffTool;
+  selectedCliff: string | null;
+  /** A new cliff: its chain of polygon corners, the drop on its right. */
+  onAddCliff: (vertices: number[]) => void;
+  onSelectCliff: (id: string | null) => void;
   selectedIcon: string | null;
   brush: Brush;
   tool: Tool;
@@ -82,7 +94,7 @@ export { placedToPlacement };
 
 /** The map on screen, in the atlas or painterly look. */
 export function MapCanvas(props: Props) {
-  const { handle, graph, seed, style, looks, placed, hiddenAuto, overlay, iconMode, iconTool, rivers, riverMode, riverTool, selectedRiver, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
+  const { handle, graph, seed, style, looks, placed, hiddenAuto, overlay, iconMode, iconTool, rivers, riverMode, riverTool, selectedRiver, cliffs, cliffMode, cliffTool, selectedCliff, selectedIcon, brush, tool, painter, onHover, onPick, onZoom } = props;
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<MapRenderer | null>(null);
@@ -95,7 +107,7 @@ export function MapCanvas(props: Props) {
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [hoverCell, setHoverCell] = useState(-1);
   const [space, setSpace] = useState(false);
-  const drag = useRef<{ kind: 'pan' | 'paint' | 'icon' | 'river'; x: number; y: number; vx: number; vy: number; id?: string; ox?: number; oy?: number } | null>(null);
+  const drag = useRef<{ kind: 'pan' | 'paint' | 'icon' | 'river' | 'cliff'; x: number; y: number; vx: number; vy: number; id?: string; ox?: number; oy?: number } | null>(null);
   /** While an icon is dragged: its new position (committed when the drag ends). */
   const [moving, setMoving] = useState<{ id: string; x: number; y: number } | null>(null);
   const noisy = useMemo(() => new NoisyEdges(graph, seed), [graph, seed]);
@@ -114,25 +126,39 @@ export function MapCanvas(props: Props) {
   const shownIcons = useMemo(() => (moving ? placed.map((i) => (i.id === moving.id ? { ...i, x: moving.x, y: moving.y } : i)) : placed), [placed, moving]);
   const hidden = useMemo(() => new Set(hiddenAuto), [hiddenAuto]);
   const shapes = useMemo(() => riverShapes(rivers, graph, noisy), [rivers, graph, noisy]);
-  /** A river being drawn by hand (map units), until the pointer is let go. */
+  /** A river or cliff being drawn by hand (map units), until the pointer is let go. */
   const [draft, setDraft] = useState<[number, number][] | null>(null);
-  const live = useRef({ style, looks, placed: shownIcons, overlay, hidden, shapes });
-  live.current = { style, looks, placed: shownIcons, overlay, hidden, shapes };
+  const live = useRef({ style, looks, placed: shownIcons, overlay, hidden, shapes, cliffs });
+  live.current = { style, looks, placed: shownIcons, overlay, hidden, shapes, cliffs };
+
+  /** The waterfalls where rivers go over cliffs, the rivers as drawn (widening up to them) and the cliffs as drawn: made again when the rivers, cliffs or land change. */
+  const derived = useRef<{ shapes: RiverShape[]; cliffs: Cliff[]; hidden: Set<string>; land: number; falls: AutoWaterfall[]; rivers: RiverShape[]; art: CliffDrawing[] } | null>(null);
+  const landTick = useRef(0);
+  const derive = useCallback(() => {
+    const map = getMap();
+    const l = live.current;
+    const d = derived.current;
+    if (d && d.shapes === l.shapes && d.cliffs === l.cliffs && d.hidden === l.hidden && d.land === landTick.current) return d;
+    const falls = map ? cliffWaterfalls(map.graph, noisy, map.land, l.shapes, l.cliffs, l.hidden) : [];
+    const next = { shapes: l.shapes, cliffs: l.cliffs, hidden: l.hidden, land: landTick.current, falls, rivers: riversAtFalls(l.shapes, falls, graph.spacing), art: cliffDrawings(l.cliffs, graph, noisy, falls) };
+    derived.current = next;
+    return next;
+  }, [graph, noisy]);
 
   /** What the icon list was last made from. */
-  const builtFrom = useRef<{ placed: PlacedIcon[]; hidden: Set<string>; shapes: RiverShape[] } | null>(null);
+  const builtFrom = useRef<{ placed: PlacedIcon[]; hidden: Set<string>; shapes: RiverShape[]; cliffs: Cliff[] } | null>(null);
   /** The icons as the map draws them, back to front: made again when anything they depend on has changed. */
   const buildIcons = useCallback(() => {
     const map = getMap();
     const l = live.current;
     const b = builtFrom.current;
-    if (!map || (!iconsStale.current && b && b.placed === l.placed && b.hidden === l.hidden && b.shapes === l.shapes)) return icons.current;
-    const all = mapIcons(map.graph, map.land, map.biome, l.looks, seed, l.placed, l.hidden, l.shapes);
+    if (!map || (!iconsStale.current && b && b.placed === l.placed && b.hidden === l.hidden && b.shapes === l.shapes && b.cliffs === l.cliffs)) return icons.current;
+    const all = mapIcons(map.graph, map.land, map.biome, l.looks, seed, l.placed, l.hidden, l.shapes, l.cliffs, derive().falls);
     icons.current = all;
     iconsStale.current = false;
-    builtFrom.current = { placed: l.placed, hidden: l.hidden, shapes: l.shapes };
+    builtFrom.current = { placed: l.placed, hidden: l.hidden, shapes: l.shapes, cliffs: l.cliffs };
     return all;
-  }, [seed]);
+  }, [seed, derive]);
 
   const draw = useCallback(() => {
     const r = renderer.current;
@@ -144,18 +170,18 @@ export function MapCanvas(props: Props) {
       coastStale.current = false;
     }
     if (heightsStale.current || !heights.current) {
-      heights.current = computeHeights(map.graph, map.land, map.elevation, l.placed);
+      heights.current = computeHeights(map.graph, map.land, map.elevation, l.placed, l.cliffs);
       heightsStale.current = false;
     }
     const v = viewRef.current;
     r.draw(
       v,
-      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: buildIcons(), heights: heights.current, overlay: l.overlay, noisy, rivers: l.shapes },
+      { graph: map.graph, land: map.land, biome: map.biome, coast: coast.current, looks: l.looks, icons: buildIcons(), heights: heights.current, overlay: l.overlay, noisy, rivers: derive().rivers, cliffs: derive().art },
       l.style,
       painting.current,
     );
     setDrawn(v);
-  }, [noisy, buildIcons]);
+  }, [noisy, buildIcons, derive]);
 
   /** Draws on the next animation frame (painting). */
   const drawSoon = useCallback(() => {
@@ -180,7 +206,10 @@ export function MapCanvas(props: Props) {
       setError((e as Error).message);
     }
     const off = onMapChange((change) => {
-      if (change === 'land' || change === 'all') coastStale.current = true;
+      if (change === 'land' || change === 'all') {
+        coastStale.current = true;
+        landTick.current++;
+      }
       if (change !== 'biome') heightsStale.current = true;
       iconsStale.current = true;
       if (change === 'all') painter.clearHistory();
@@ -214,7 +243,7 @@ export function MapCanvas(props: Props) {
     heightsStale.current = true;
     iconsStale.current = true;
     drawSoon();
-  }, [shownIcons, hidden, shapes, drawSoon]);
+  }, [shownIcons, hidden, shapes, cliffs, drawSoon]);
 
   // Icon drawings made in the background are ready: draw again.
   useEffect(() => {
@@ -325,11 +354,21 @@ export function MapCanvas(props: Props) {
       if (riverTool === 'select') props.onSelectRiver(riverAt(shapes, p.x, p.y, 5 / viewRef.current.scale));
       else if (riverTool === 'route' && inside) {
         const map = getMap();
-        const route = map && heights.current ? routeRiver(map.graph, map.land, heights.current, p.x, p.y, rivers) : null;
+        const route = map && heights.current ? routeRiver(map.graph, map.land, heights.current, p.x, p.y, rivers, cliffs) : null;
         if (route) props.onAddRiver(route);
       } else if (riverTool === 'draw' && inside) {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
         drag.current = { kind: 'river', x: e.clientX, y: e.clientY, vx: 0, vy: 0 };
+        setDraft([[p.x, p.y]]);
+      }
+      return;
+    }
+    if (cliffMode) {
+      const inside = p.x >= 0 && p.y >= 0 && p.x <= graph.width && p.y <= graph.height;
+      if (cliffTool === 'select') props.onSelectCliff(cliffAt(graph, cliffs, p.x, p.y, 6 / viewRef.current.scale));
+      else if (inside) {
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        drag.current = { kind: 'cliff', x: e.clientX, y: e.clientY, vx: 0, vy: 0 };
         setDraft([[p.x, p.y]]);
       }
       return;
@@ -378,7 +417,7 @@ export function MapCanvas(props: Props) {
     const d = drag.current;
     if (!d) return;
     if (d.kind === 'pan') setView((v) => ({ ...v, x: d.vx + e.clientX - d.x, y: d.vy + e.clientY - d.y }));
-    else if (d.kind === 'river') {
+    else if (d.kind === 'river' || d.kind === 'cliff') {
       const p = toMap(e.clientX, e.clientY);
       setDraft((pts) => {
         if (!pts) return pts;
@@ -410,8 +449,16 @@ export function MapCanvas(props: Props) {
       let length = 0;
       for (let i = 1; i < draft.length; i++) length += Math.hypot(draft[i][0] - draft[i - 1][0], draft[i][1] - draft[i - 1][1]);
       const map = getMap();
-      const path = map && length >= graph.spacing * 1.5 ? snapLine(map.graph, map.land, draft, rivers, graph.spacing * 0.6) : null;
+      const path = map && length >= graph.spacing * 1.5 ? snapLine(map.graph, map.land, draft, rivers, graph.spacing * 0.6, cliffs) : null;
       if (path) props.onAddRiver(path);
+      setDraft(null);
+    } else if (d?.kind === 'cliff' && draft) {
+      // A cliff drawn by hand: moved onto the borders nearest the stroke, the drop on its right.
+      let length = 0;
+      for (let i = 1; i < draft.length; i++) length += Math.hypot(draft[i][0] - draft[i - 1][0], draft[i][1] - draft[i - 1][1]);
+      const map = getMap();
+      const path = map && length >= graph.spacing * 1.5 ? snapCliff(map.graph, map.land, draft) : null;
+      if (path) props.onAddCliff(path);
       setDraft(null);
     }
     drag.current = null;
@@ -439,6 +486,33 @@ export function MapCanvas(props: Props) {
     const r = selectedRiver ? shapes.find((q) => q.id === selectedRiver) : undefined;
     return r ? r.pts.map(([x, y]) => `${(view.x + x * view.scale).toFixed(1)},${(view.y + y * view.scale).toFixed(1)}`).join(' ') : null;
   })();
+  // The selected cliff: a dashed line along its rim, with short marks on the drop side.
+  const toScreen = ([x, y]: [number, number]) => `${(view.x + x * view.scale).toFixed(1)},${(view.y + y * view.scale).toFixed(1)}`;
+  const dropTicks = (pts: [number, number][], every: number) => {
+    let d = '';
+    let run = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i - 1];
+      const [bx, by] = pts[i];
+      const len = Math.hypot(bx - ax, by - ay);
+      run += len;
+      if (run < every || len === 0) continue;
+      run = 0;
+      const mx = view.x + ((ax + bx) / 2) * view.scale;
+      const my = view.y + ((ay + by) / 2) * view.scale;
+      const nx = -(by - ay) / len;
+      const ny = (bx - ax) / len;
+      d += `M${mx.toFixed(1)},${my.toFixed(1)}L${(mx + nx * 7).toFixed(1)},${(my + ny * 7).toFixed(1)}`;
+    }
+    return d;
+  };
+  const selectedCliffLine = (() => {
+    const c = selectedCliff ? cliffs.find((q) => q.id === selectedCliff) : undefined;
+    if (!c || c.vertices.length < 2) return null;
+    const { pts } = borderLine(graph, noisy, c.vertices);
+    return { line: pts.map(toScreen).join(' '), ticks: dropTicks(pts, 14 / view.scale) };
+  })();
+  const draftTicks = draft && drag.current?.kind === 'cliff' && draft.length > 1 ? dropTicks(draft, 14 / view.scale) : null;
   // A dashed box around the selected icon's drawing.
   const selectedBox = (() => {
     if (!selected) return null;
@@ -449,14 +523,14 @@ export function MapCanvas(props: Props) {
     return { left: sx + b.left * view.scale, top: sy + b.top * view.scale, width: b.width * view.scale, height: b.height * view.scale };
   })();
   const panning = tool === 'hand' || space;
-  const showBrush = cursor && !panning && !iconMode && !riverMode && tool === 'brush' && !error;
+  const showBrush = cursor && !panning && !iconMode && !riverMode && !cliffMode && tool === 'brush' && !error;
 
   return (
     <div
       ref={box}
       className="relative h-full w-full touch-none overflow-hidden select-none"
       style={{
-        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : riverMode ? (riverTool === 'select' ? 'default' : 'crosshair') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : iconTool === 'select' ? 'default' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
+        cursor: panning ? (drag.current?.kind === 'pan' ? 'grabbing' : 'grab') : riverMode ? (riverTool === 'select' ? 'default' : 'crosshair') : cliffMode ? (cliffTool === 'select' ? 'default' : 'crosshair') : iconMode ? (drag.current?.kind === 'icon' ? 'grabbing' : iconTool === 'select' ? 'default' : 'copy') : tool === 'fill' ? 'cell' : showBrush ? 'none' : 'crosshair',
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -474,6 +548,13 @@ export function MapCanvas(props: Props) {
         {hoverOutline && <polygon points={hoverOutline} fill="none" stroke="#fc3f3f" strokeWidth={1.6} strokeLinejoin="round" data-testid="hover-cell" />}
         {draft && draft.length > 1 && (
           <polyline points={draft.map(([x, y]) => `${(view.x + x * view.scale).toFixed(1)},${(view.y + y * view.scale).toFixed(1)}`).join(' ')} fill="none" stroke="#002657" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" data-testid="river-draft" />
+        )}
+        {draftTicks && <path d={draftTicks} fill="none" stroke="#002657" strokeWidth={2} strokeLinecap="round" data-testid="cliff-draft-drop" />}
+        {selectedCliffLine && (
+          <>
+            <polyline points={selectedCliffLine.line} fill="none" stroke="#002657" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" data-testid="selected-cliff" />
+            <path d={selectedCliffLine.ticks} fill="none" stroke="#002657" strokeWidth={1.5} strokeLinecap="round" />
+          </>
         )}
         {selectedShape && (
           <polyline points={selectedShape} fill="none" stroke="#002657" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" data-testid="selected-river" />

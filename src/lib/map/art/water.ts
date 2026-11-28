@@ -1,8 +1,8 @@
-import { LEAN, SHEAR, type Dir, type Frame } from './cliff';
+import { LEAN, SHEAR, type Dir, type Frame } from './frame';
 import { LINE, chaikin, clearShape, ink, lerp, pathOf, rng, wobble, yAt, type ArtColors, type Pt, type Rng } from './ink';
 
 // Waterfalls (Stage 5), in the same ink style as the terrain, one drawing per compass direction
-// (the way the water falls), matching the cliffs: never turned, since a falling sheet always
+// (the way the water falls): never turned, since a falling sheet always
 // hangs straight down the page.
 //
 // S, SE, SW: a rocky lip, a sheet of water falling between hatched rock, and spray and ripples
@@ -14,7 +14,10 @@ import { LINE, chaikin, clearShape, ink, lerp, pathOf, rng, wobble, yAt, type Ar
 
 const D = Math.SQRT1_2;
 
-/** The box of each direction's drawing, in units of the waterfall's width (see cliffFrame). */
+/** How far a waterfall's water falls down the page, on average, as a share of its width (see fallFacing and fallSide: 1.1 × 0.6 to 0.65). */
+export const FALL = 1.1 * 0.625;
+
+/** The box of each direction's drawing, in units of the waterfall's width (see Frame). */
 export function waterfallFrame(dir: Dir): Frame {
   switch (dir) {
     case 4:

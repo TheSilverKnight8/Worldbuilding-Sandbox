@@ -5,12 +5,13 @@ import { newId } from './ids';
 import { MAX_BIOMES, biomeRecord, seedBiomes, slotFor } from './map/biomes';
 import { DEFAULT_CELLS, elevationFromBlob, elevationToBlob, generateGraph, graphFromBlob, graphToBlob, landFromBlob, landToBlob, mapUnitsFor, type Graph } from './map/graph';
 import { GEN_BIOMES, type GeneratedMap } from './map/generate';
+import { fitCliffs } from './map/cliffs';
 import { fitRivers } from './map/rivers';
 import { DEFAULT_LAND_ELEVATION } from './map/terrain';
 import { newSeed } from './rng';
 import { FORMAT_VERSION, download, exportFile, exportFileName, readExportFile, readWorld } from './world/format';
 import { KIND_LABEL, linksIn, withoutRef, type EntryKind } from './world/entries';
-import { metaOf, type BiomeFields, type FieldValue, type IconSet, type MapInfo, type PlacedIcon, type River, type WorldBlob, type WorldDoc, type WorldMeta, type WorldRecord } from './world/types';
+import { metaOf, type BiomeFields, type Cliff, type FieldValue, type IconSet, type MapInfo, type PlacedIcon, type River, type WorldBlob, type WorldDoc, type WorldMeta, type WorldRecord } from './world/types';
 
 export interface SaveStatus {
   state: 'saved' | 'saving' | 'error';
@@ -225,6 +226,14 @@ export async function openWorld(id: string) {
       const fit = fitRivers(mapData.graph, mapData.land, world.map.rivers);
       if (fit.changed) {
         world = { ...world, map: { ...world.map, rivers: fit.rivers } };
+        riversFitted = true;
+      }
+    }
+    // Cliffs are chains of this map's corners: one with a gap is joined up, one that does not fit is left out.
+    if (world.map && mapData && world.map.cliffs.length) {
+      const fit = fitCliffs(mapData.graph, world.map.cliffs);
+      if (fit.changed) {
+        world = { ...world, map: { ...world.map, cliffs: fit.cliffs } };
         riversFitted = true;
       }
     }
@@ -484,6 +493,7 @@ export async function setupMap(widthKm: number, heightKm: number, draft?: MapDra
     icons: [],
     hiddenAuto: [],
     rivers: [],
+    cliffs: [],
   };
   try {
     // The polygons are written once, now; land and biomes save with the world from here on.
@@ -506,7 +516,7 @@ export async function setupMap(widthKm: number, heightKm: number, draft?: MapDra
     elevation: draft ? draft.generated.elevation.slice() : new Int16Array(graph.cellCount),
   };
   layersDirty = true;
-  updateWorld(() => ({ ...seeded.doc, map: draft ? { ...seeded.map, icons: draft.generated.icons, rivers: draft.generated.rivers } : seeded.map }));
+  updateWorld(() => ({ ...seeded.doc, map: draft ? { ...seeded.map, icons: draft.generated.icons, rivers: draft.generated.rivers, cliffs: draft.generated.cliffs } : seeded.map }));
   emitMap('all');
   return { ok: true, value: undefined };
 }
@@ -569,6 +579,11 @@ export function deleteBiome(id: string) {
 /** Sets the map's rivers. */
 export function setRivers(rivers: River[]) {
   updateWorld((d) => (d.map ? { ...d, map: { ...d.map, rivers } } : d));
+}
+
+/** Sets the map's cliffs (they shape the ground, so the map is redrawn as for an elevation change). */
+export function setCliffs(cliffs: Cliff[]) {
+  updateWorld((d) => (d.map ? { ...d, map: { ...d.map, cliffs } } : d));
 }
 
 /** Sets the icons placed by hand, and (if given) the keys of the app's own icons that were taken over. */

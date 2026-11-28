@@ -1,6 +1,6 @@
 import { mixSeed, seededRandom } from '../rng';
-import type { CliffShape, IconKind } from '../world/types';
-import { CLIFF_RIM, LEAN, SHEAR, cliff, cliffFrame, type Dir, type Frame } from './art/cliff';
+import type { IconKind, PlacedIcon } from '../world/types';
+import { LEAN, SHEAR, type Dir, type Frame } from './art/frame';
 import { setMinLine, type ArtColors } from './art/ink';
 import { cactus, deciduous, dunes, grass, palm, pine, reeds, shrub } from './art/plants';
 import { hill, mountain, plateau, volcano } from './art/terrain';
@@ -40,8 +40,7 @@ const ART: Record<IconKind, ArtSpec> = {
   hill: { aspect: 0.6, anchorY: 0.95, variants: 12, minPx: 6, perCell: 0 },
   volcano: { aspect: 1, anchorY: 0.97, variants: 8, minPx: 8, perCell: 0 },
   plateau: { aspect: 0.55, anchorY: 0.95, variants: 8, minPx: 8, perCell: 0 },
-  // Cliffs and waterfalls: as drawn facing south; each direction has its own box (frameOf).
-  cliff: { aspect: 0.667, anchorY: CLIFF_RIM.facing, variants: 8, minPx: 10, perCell: 0 },
+  // Waterfalls: as drawn facing south; each direction has its own box (frameOf).
   deciduous: { aspect: 1.15, anchorY: 0.96, variants: 12, minPx: 4, perCell: 4 },
   pine: { aspect: 1.5, anchorY: 0.97, variants: 10, minPx: 4, perCell: 4 },
   jungle: { aspect: 1.15, anchorY: 0.97, variants: 10, minPx: 5, perCell: 3 },
@@ -69,7 +68,6 @@ const PAINT: Record<IconKind, [string, string]> = {
   hill: ['#a99d6b', '#5a5032'],
   volcano: ['#a08a72', '#3e3026'],
   plateau: ['#cfae78', '#6b5233'],
-  cliff: ['#a8987a', '#3e3426'],
   deciduous: ['#5b8c45', '#2c4a25'],
   pine: ['#3a6a4d', '#1c3528'],
   jungle: ['#3f8a4c', '#1a4224'],
@@ -92,34 +90,32 @@ function colorsFor(kind: IconKind, style: IconStyle): ArtColors {
   return { fill, color: line, wash: rgba(line, 0.28), washDark: rgba(line, 0.48) };
 }
 
-/** Which drawing of an icon: for a cliff or a waterfall, the direction it faces (a drawing each); for a cliff, its shape. */
+/** Which drawing of an icon: for a waterfall, the direction it falls toward (a drawing each). */
 export interface IconLook {
   dir?: Dir;
-  shape?: CliffShape;
 }
 
 /** The box of an icon's drawing, in units of its width, with its point at (ax, ay). */
 export function frameOf(kind: IconKind, look: IconLook = {}): Frame {
-  if (kind === 'cliff') return cliffFrame(look.dir ?? 4);
   if (kind === 'waterfall') return waterfallFrame(look.dir ?? 4);
   const spec = ART[kind];
   return { w: 1, h: spec.aspect, ax: 0.5, ay: spec.aspect * spec.anchorY };
 }
 
 /**
- * On the painterly map a cliff's or waterfall's fill fades out toward the foot of its face (on
+ * On the painterly map a waterfall's fill fades out toward the foot of its face (on
  * a drop facing away, across the high ground on the near side). The fade runs across the rim:
  * `n` is the rim's normal on that side, `v` the way down the face (strokes lean on SE and SW,
  * run out on E and W), and the fade lies from d0 to d1 widths down the face.
  */
-function faceFade(kind: 'cliff' | 'waterfall', dir: Dir) {
+function faceFade(dir: Dir) {
   const a = (dir * Math.PI) / 4;
   const d: [number, number] = [Math.sin(a), -Math.cos(a)];
   const away = dir === 0 || dir === 1 || dir === 7;
   const n: [number, number] = away ? [-d[0], -d[1]] : d;
   const v: [number, number] = dir === 2 || dir === 6 ? [Math.sign(d[0]) * SHEAR, 1] : dir === 3 || dir === 5 ? [Math.sign(d[0]) * LEAN, 1] : [0, 1];
   const along = v[0] * n[0] + v[1] * n[1];
-  const [d0, d1] = away ? (kind === 'cliff' ? [0.013, 0.133] : [0.01, 0.13]) : kind === 'cliff' ? [0.173, 0.473] : [0.22, 0.715];
+  const [d0, d1] = away ? [0.01, 0.13] : [0.22, 0.715];
   return { n, d0: d0 * along, d1: d1 * along };
 }
 
@@ -140,8 +136,6 @@ function drawArt(ctx: CanvasRenderingContext2D, kind: IconKind, variant: number,
       return volcano(ctx, seed, W, H, c);
     case 'plateau':
       return plateau(ctx, seed, W, H, c);
-    case 'cliff':
-      return cliff(ctx, seed, UNITS, c, look.shape ?? 'even', look.dir ?? 4);
     case 'deciduous':
       return deciduous(ctx, seed, W, H, c);
     case 'pine':
@@ -219,8 +213,8 @@ function makeSprite(kind: IconKind, variant: number, style: IconStyle, level: nu
       // Painterly terrain: the fill fades out over the lowest part, toward the ground (for a cliff, toward the foot of its
       // face; for a waterfall, toward the pool).
       let g: CanvasGradient;
-      if (kind === 'cliff' || kind === 'waterfall') {
-        const { n, d0, d1 } = faceFade(kind, look.dir ?? 4);
+      if (kind === 'waterfall') {
+        const { n, d0, d1 } = faceFade(look.dir ?? 4);
         const ax = UNITS * f.ax;
         const ay = UNITS * f.ay;
         g = ctx.createLinearGradient(ax + n[0] * d0 * UNITS, ay + n[1] * d0 * UNITS, ax + n[0] * d1 * UNITS, ay + n[1] * d1 * UNITS);
@@ -269,7 +263,7 @@ function runPending() {
  */
 export function iconSprite(kind: IconKind, variant: number, style: IconStyle, px: number, look: IconLook = {}, now = false): Sprite | null {
   const level = LEVELS.find((l) => l >= px) ?? LEVELS[LEVELS.length - 1];
-  const base = `${style}|${kind}|${variant}|${look.dir ?? ''}|${look.shape ?? ''}`;
+  const base = `${style}|${kind}|${variant}|${look.dir ?? ''}`;
   const key = `${base}|${level}`;
   const hit = cache.get(key);
   if (hit) {
@@ -301,32 +295,35 @@ export function iconSprite(kind: IconKind, variant: number, style: IconStyle, px
 // ------------------------------------------------------------------ placements
 
 export interface Placement {
-  /** Ground point, in map units (for a cliff, the middle of its rim). */
+  /** Ground point, in map units (for a waterfall, the middle of its lip). */
   x: number;
   y: number;
   /** Width in map units. */
   size: number;
   set: IconKind;
   variant: number;
-  /** Cliffs and waterfalls: the compass direction the drop faces (drawn as the nearest of 8). */
+  /** Waterfalls: the compass direction the water falls toward (drawn as the nearest of 8). */
   angle?: number;
-  shape?: CliffShape;
   /** Set for icons placed by hand: the placed icon's ID. */
   placed?: string;
   /** Set for icons the app drew by itself: the key that names it (see MapInfo.hiddenAuto). */
   auto?: string;
 }
 
-/** Which drawing a placement uses: for a cliff or a waterfall its direction (and a cliff's shape). */
-export function placementLook(p: { set: IconKind; angle?: number; shape?: CliffShape }): IconLook {
-  if (p.set === 'waterfall') return { dir: dirOf(p) };
-  if (p.set !== 'cliff') return {};
-  const dir = dirOf(p);
-  // Left and right are as seen with the drop facing you: on a drop facing away they are the
-  // other way round on the page.
-  const away = dir === 0 || dir === 1 || dir === 7;
-  const shape: CliffShape = away && p.shape === 'taper-left' ? 'taper-right' : away && p.shape === 'taper-right' ? 'taper-left' : (p.shape ?? 'even');
-  return { dir, shape };
+/** An icon placed by hand, as the map draws it. */
+export function placedToPlacement(p: PlacedIcon): Placement {
+  let variant = p.variant;
+  if (variant === undefined) {
+    let h = 0;
+    for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) | 0;
+    variant = Math.abs(h);
+  }
+  return { x: p.x, y: p.y, size: p.size, set: p.kind, variant: variant % variantsOf(p.kind), angle: p.angle, placed: p.id };
+}
+
+/** Which drawing a placement uses: for a waterfall, the direction it falls toward. */
+export function placementLook(p: { set: IconKind; angle?: number }): IconLook {
+  return p.set === 'waterfall' ? { dir: dirOf(p) } : {};
 }
 
 /** The box around an icon's drawing, relative to its ground point, in map units. */

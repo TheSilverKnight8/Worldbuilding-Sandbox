@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Hand, Layers, Maximize, PaintBucket, Paintbrush, Redo2, Undo2 } from 'lucide-react';
 import { Input, Kbd, Segmented, cx } from '../components/ui';
-import { emitMap, getMap, mapEdited, setPlacedIcons, setRivers } from '../lib/store';
+import { emitMap, getMap, mapEdited, setCliffs, setPlacedIcons, setRivers } from '../lib/store';
 import { lookFor, onLookChange, setLook } from '../lib/session';
 import { newId } from '../lib/ids';
 import { biomeFields, slotLooks, type SlotLook } from '../lib/map/biomes';
@@ -9,16 +9,20 @@ import { cellAt, type Graph } from '../lib/map/graph';
 import { MapPainter, type Brush, type ElevationOp, type PaintMode } from '../lib/map/paint';
 import { OVERLAY, type MapStyle } from '../lib/map/render';
 import { variantsOf, type Placement } from '../lib/map/icons';
+import { cliffLength } from '../lib/map/cliffs';
 import { defaultRiverWidth, riverLength } from '../lib/map/rivers';
 import { ELEVATION_MAX, KINDS, SIZED_BY_POLYGON, footOffset, iconCell, polygonScale } from '../lib/map/terrain';
 import { placedToPlacement } from '../lib/map/scene';
-import type { IconKind, MapInfo, PlacedIcon, River, WorldDoc } from '../lib/world/types';
+import type { Cliff, IconKind, MapInfo, PlacedIcon, River, WorldDoc } from '../lib/world/types';
 import { BiomePanel } from './BiomePanel';
 import { IconsPanel, type IconSettings } from './IconsPanel';
-import { MapCanvas, type Hover, type IconTool, type MapCanvasHandle, type RiverTool, type Tool } from './MapCanvas';
+import { CliffsPanel } from './CliffsPanel';
+import { MapCanvas, type CliffTool, type Hover, type IconTool, type MapCanvasHandle, type RiverTool, type Tool } from './MapCanvas';
 import { RiversPanel } from './RiversPanel';
 
-type Mode = PaintMode | 'rivers' | 'icons';
+type Mode = PaintMode | 'rivers' | 'cliffs' | 'icons';
+/** Modes where clicks on the map draw, place or select instead of painting. */
+const clicking = (m: Mode) => m === 'icons' || m === 'rivers' || m === 'cliffs';
 
 const km = (n: number) => `${Math.round(n).toLocaleString()} km`;
 /** A size in km: whole km above 10, one decimal below. */
@@ -71,7 +75,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
 
   const biomeSlot = biomeId ? Math.max(0, map.biomeSlots.indexOf(biomeId)) : 0;
   const brush: Brush = useMemo(
-    () => ({ mode: mode === 'icons' || mode === 'rivers' ? 'land' : mode, land, biomeSlot, op, meters: op === 'set' ? setMeters : stepMeters, radius }),
+    () => ({ mode: clicking(mode) ? 'land' : mode, land, biomeSlot, op, meters: op === 'set' ? setMeters : stepMeters, radius }),
     [mode, land, biomeSlot, op, setMeters, stepMeters, radius],
   );
 
@@ -82,7 +86,6 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
       sizeKm: KINDS[k].size * graph.spacing * kmPerUnit,
       meters: KINDS[k].meters?.value,
       angle: KINDS[k].directional ? 180 : undefined,
-      shape: k === 'cliff' ? 'even' : undefined,
     }),
     [graph.spacing, kmPerUnit],
   );
@@ -144,7 +147,6 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
       };
       if (iconSettings.meters !== undefined && KINDS[iconKind].meters) icon.meters = iconSettings.meters;
       if (KINDS[iconKind].directional) icon.angle = iconSettings.angle ?? 180;
-      if (iconKind === 'cliff') icon.shape = iconSettings.shape ?? 'even';
       const replaced = there?.id;
       changeIcons([...(replaced ? map.icons.filter((i) => i.id !== replaced) : map.icons), icon]);
       setSelectedIcon(icon.id);
@@ -158,9 +160,8 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
       const icon: PlacedIcon = { id: newId(), kind: p.set, x: p.x, y: p.y, size: p.size, variant: p.variant };
       // A hill or mountain keeps the height of the ground it stood on, so taking it over does not raise the land.
       if (KINDS[p.set].meters) icon.meters = Math.max(1, Math.round(meters));
-      // A waterfall the app drew keeps the direction it faced.
+      // A waterfall the app drew keeps the direction it fell.
       if (KINDS[p.set].directional) icon.angle = p.angle ?? 180;
-      if (p.shape) icon.shape = p.shape;
       changeIcons([...map.icons, icon], undefined, p.auto ? [...map.hiddenAuto, p.auto] : undefined);
       return icon.id;
     },
@@ -176,14 +177,13 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
   }, [selectedIcon, map.icons, changeIcons]);
 
   const selectedSettings: IconSettings | null = selected
-    ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle ?? (KINDS[selected.kind].directional ? 180 : undefined), shape: selected.shape }
+    ? { sizeKm: selected.size * kmPerUnit, meters: selected.meters ?? KINDS[selected.kind].meters?.value, angle: selected.angle ?? (KINDS[selected.kind].directional ? 180 : undefined) }
     : null;
   const editSelected = (s: IconSettings) => {
     if (!selected) return;
     const next: PlacedIcon = { ...selected, size: Math.max(0.05, s.sizeKm / kmPerUnit) };
     if (KINDS[selected.kind].meters && s.meters !== undefined) next.meters = s.meters;
     if (KINDS[selected.kind].directional) next.angle = s.angle ?? 180;
-    if (selected.kind === 'cliff') next.shape = s.shape ?? 'even';
     changeIcons(
       map.icons.map((i) => (i.id === selected.id ? next : i)),
       `edit ${selected.id}`,
@@ -226,6 +226,42 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
     setSelectedRiver(null);
   }, [selectedRiver, map.rivers, changeRivers]);
   const riverLengthKm = river ? riverLength(graph, river) * kmPerUnit : 0;
+
+  // ------------------------------------------------------------ cliffs
+
+  const [cliffTool, setCliffTool] = useState<CliffTool>('draw');
+  const [selectedCliff, setSelectedCliff] = useState<string | null>(null);
+  const [newCliffMeters, setNewCliffMeters] = useState(300);
+  const cliff = selectedCliff ? (map.cliffs.find((c) => c.id === selectedCliff) ?? null) : null;
+  useEffect(() => {
+    if (selectedCliff && !cliff) setSelectedCliff(null);
+  }, [selectedCliff, cliff]);
+  useEffect(() => {
+    if (mode !== 'cliffs') setSelectedCliff(null);
+  }, [mode]);
+  /** Changes the cliffs and adds the change to the undo history. */
+  const changeCliffs = useCallback(
+    (next: Cliff[], key?: string) => {
+      const before = map.cliffs;
+      setCliffs(next);
+      painter.push({ undo: () => setCliffs(before), redo: () => setCliffs(next), key });
+    },
+    [map.cliffs, painter],
+  );
+  const addCliff = useCallback(
+    (vertices: number[]) => {
+      const c: Cliff = { id: newId(), vertices, meters: newCliffMeters };
+      changeCliffs([...map.cliffs, c]);
+      setSelectedCliff(c.id);
+    },
+    [map.cliffs, changeCliffs, newCliffMeters],
+  );
+  const deleteCliff = useCallback(() => {
+    if (!selectedCliff) return;
+    changeCliffs(map.cliffs.filter((c) => c.id !== selectedCliff));
+    setSelectedCliff(null);
+  }, [selectedCliff, map.cliffs, changeCliffs]);
+  const cliffLengthKm = cliff ? cliffLength(graph, cliff) * kmPerUnit : 0;
 
   // ------------------------------------------------------------ picking and keys
 
@@ -271,9 +307,13 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
       } else if (mode === 'rivers' && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         deleteRiver();
+      } else if (mode === 'cliffs' && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        deleteCliff();
       } else if (e.key === 'Escape') {
         setSelectedIcon(null);
         setSelectedRiver(null);
+        setSelectedCliff(null);
       }
       else if (k === 'b') setTool('brush');
       else if (k === 'f') setTool('fill');
@@ -286,7 +326,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [painter, mode, deleteSelected, deleteRiver, active]);
+  }, [painter, mode, deleteSelected, deleteRiver, deleteCliff, active]);
 
   // Fill has nothing to do in Elevation mode.
   useEffect(() => {
@@ -311,6 +351,7 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
               { value: 'biome', label: 'Biomes' },
               { value: 'elevation', label: 'Elevation' },
               { value: 'rivers', label: 'Rivers' },
+              { value: 'cliffs', label: 'Cliffs' },
               { value: 'icons', label: 'Icons' },
             ]}
           />
@@ -368,6 +409,19 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
                 ]}
               />
               <span className="text-sm text-muted">{riverTool === 'draw' ? 'Drag from the source to the mouth.' : riverTool === 'route' ? 'Click where the river starts.' : 'Click a river to select it.'}</span>
+            </>
+          ) : mode === 'cliffs' ? (
+            <>
+              <Segmented<CliffTool>
+                value={cliffTool}
+                onChange={setCliffTool}
+                size="sm"
+                options={[
+                  { value: 'draw', label: 'Draw', title: 'Drag along where a cliff runs; the drop is on the right of the way you drag' },
+                  { value: 'select', label: 'Select', title: 'Click a cliff to select it' },
+                ]}
+              />
+              <span className="text-sm text-muted">{cliffTool === 'draw' ? 'Drag along the cliff; the drop is on your right.' : 'Click a cliff to select it.'}</span>
             </>
           ) : mode === 'icons' ? (
             <>
@@ -441,9 +495,15 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
             selectedRiver={selectedRiver}
             onAddRiver={addRiver}
             onSelectRiver={setSelectedRiver}
+            cliffs={map.cliffs}
+            cliffMode={mode === 'cliffs'}
+            cliffTool={cliffTool}
+            selectedCliff={selectedCliff}
+            onAddCliff={addCliff}
+            onSelectCliff={setSelectedCliff}
             selectedIcon={selectedIcon}
             brush={brush}
-            tool={mode === 'icons' || mode === 'rivers' ? 'brush' : tool}
+            tool={clicking(mode) ? 'brush' : tool}
             painter={painter}
             onHover={setHover}
             onPick={pick}
@@ -527,6 +587,18 @@ export function MapEditor({ world, map, graph, active = true }: { world: WorldDo
           onFlip={() => river && changeRivers(map.rivers.map((r) => (r.id === river.id ? { ...r, vertices: [...r.vertices].reverse() } : r)))}
           onDelete={deleteRiver}
           onDeselect={() => setSelectedRiver(null)}
+        />
+      ) : mode === 'cliffs' ? (
+        <CliffsPanel
+          tool={cliffTool}
+          newMeters={newCliffMeters}
+          onNewMeters={setNewCliffMeters}
+          selected={cliff}
+          selectedLengthKm={cliffLengthKm}
+          onMeters={(m) => cliff && changeCliffs(map.cliffs.map((c) => (c.id === cliff.id ? { ...c, meters: m } : c)), `drop ${cliff.id}`)}
+          onFlip={() => cliff && changeCliffs(map.cliffs.map((c) => (c.id === cliff.id ? { ...c, vertices: [...c.vertices].reverse() } : c)))}
+          onDelete={deleteCliff}
+          onDeselect={() => setSelectedCliff(null)}
         />
       ) : mode === 'icons' ? (
         <IconsPanel

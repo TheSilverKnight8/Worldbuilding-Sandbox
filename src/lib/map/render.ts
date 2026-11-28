@@ -5,6 +5,7 @@ import type { Graph } from './graph';
 import { beginIconFrame, iconSprite, minPixels, placementLook, type IconStyle, type Placement } from './icons';
 import type { NoisyEdges } from './noisy';
 import type { RiverShape } from './rivers';
+import { HATCH_TIERS, type CliffDrawing } from './cliffs';
 import { PAPER_TILE_PIXELS, PAPER_TILE_UNITS, paperTexture } from './paper';
 
 // Draws the map with the browser's 2D canvas, in map units, in one of two looks:
@@ -50,6 +51,12 @@ export const ATLAS = {
 };
 
 export const PAINTERLY = {
+  /** A cliff's rock face, darker toward its rim, and its ink. */
+  cliffFace: '#b3a383',
+  cliffShade: 'rgba(62, 52, 38, 0.2)',
+  cliffInk: '#3e3426',
+  /** A waterfall's water, lighter than the sea's blue. */
+  fallWater: '#cfe3ee',
   /** A river's banks; its water is the sea's blue. */
   riverBank: 'rgba(38, 56, 72, 0.75)',
   /** Open sea, and the lighter water along the coast (Caleb: blue on the painterly map). */
@@ -84,6 +91,8 @@ export interface Scene {
   /** Draw the elevation overlay (height colors and contour lines). */
   overlay: boolean;
   rivers: RiverShape[];
+  /** The cliffs (along polygon borders), north first. */
+  cliffs: CliffDrawing[];
   noisy: NoisyEdges;
 }
 
@@ -200,7 +209,7 @@ export class MapRenderer {
       // Rivers stop at the shore: they are drawn on land only (so also not across a lake).
       ctx.save();
       ctx.clip(land, 'evenodd');
-      this.drawRivers(view, dpr, scene, style);
+      this.drawRivers(ctx, view, dpr, scene, style);
       ctx.restore();
     }
 
@@ -503,8 +512,7 @@ export class MapRenderer {
    * The banks of every river are drawn first and the water after, so rivers that join run
    * into each other without a line across.
    */
-  private drawRivers(view: View, dpr: number, scene: Scene, style: MapStyle) {
-    const ctx = this.ctx;
+  private drawRivers(ctx: CanvasRenderingContext2D, view: View, dpr: number, scene: Scene, style: MapStyle) {
     const s = view.scale * dpr;
     ctx.setTransform(s, 0, 0, s, view.x * dpr, view.y * dpr);
     ctx.lineCap = 'round';
@@ -530,6 +538,93 @@ export class MapRenderer {
   }
 
   /**
+   * The cliffs, on the icons' layer before the icons (so icons in front of a cliff hide it):
+   * the rock face hides what is behind it (rivers, the coast), as land on the atlas and as
+   * rock on the painterly map; then the hatching (less of it when zoomed out, so the face does
+   * not fill in), loose rock at the foot, and the rim and cracks.
+   */
+  private drawCliffs(ctx: CanvasRenderingContext2D, view: View, dpr: number, scene: Scene, style: MapStyle) {
+    if (!scene.cliffs.length) return;
+    const s = view.scale * dpr;
+    const x0 = -view.x / view.scale;
+    const y0 = -view.y / view.scale;
+    const x1 = x0 + this.canvas.width / s;
+    const y1 = y0 + this.canvas.height / s;
+    const thin = 0.6 / s;
+    const ink = style === 'atlas' ? ATLAS.ink : PAINTERLY.cliffInk;
+    ctx.save();
+    ctx.setTransform(s, 0, 0, s, view.x * dpr, view.y * dpr);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const c of scene.cliffs) {
+      const [bx0, by0, bx1, by1] = c.box;
+      if (bx1 < x0 || by1 < y0 || bx0 > x1 || by0 > y1) continue;
+      // As land on the atlas (paper under the land's tint), as rock on the painterly map.
+      const fill = (path: Path2D) => {
+        if (style === 'atlas') {
+          ctx.fillStyle = this.paper(ctx);
+          ctx.fill(path);
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.fillStyle = ATLAS.land;
+          ctx.fill(path);
+          ctx.globalCompositeOperation = 'source-over';
+        } else {
+          ctx.fillStyle = PAINTERLY.cliffFace;
+          ctx.fill(path);
+        }
+      };
+      fill(c.face);
+      if (style !== 'atlas') {
+        ctx.fillStyle = PAINTERLY.cliffShade;
+        ctx.fill(c.faceTop);
+      }
+      ctx.strokeStyle = ink;
+      const tiers = Math.max(1, Math.min(HATCH_TIERS, Math.ceil((HATCH_TIERS * c.gap * s) / 2.4)));
+      for (const h of c.hatch) {
+        if (h.tier >= tiers) continue;
+        ctx.lineWidth = Math.max(h.width, thin);
+        ctx.stroke(h.path);
+      }
+      if (c.rockLine * s > 0.25) {
+        fill(c.rocks);
+        ctx.lineWidth = Math.max(c.rockLine, thin);
+        ctx.stroke(c.rocks);
+      }
+      // Waterfalls down the face: the river's water, falling, with spray where it lands.
+      ctx.fillStyle = style === 'atlas' ? ATLAS.riverWater : PAINTERLY.fallWater;
+      ctx.fill(c.water);
+      ctx.fill(c.spray);
+      for (const l of c.waterLines) {
+        ctx.lineWidth = Math.max(l.width, thin);
+        ctx.stroke(l.path);
+      }
+      ctx.lineWidth = Math.max(c.rockLine * 0.8, thin);
+      ctx.stroke(c.spray);
+      for (const l of c.lines) {
+        ctx.lineWidth = Math.max(l.width, thin);
+        ctx.stroke(l.path);
+      }
+    }
+    ctx.restore();
+  }
+
+  /** Where an icon's sprite goes on the screen, in pixels; null when it is too small to draw at this zoom, off the screen, or not made yet. */
+  private stamp(p: Placement, view: View, dpr: number, style: MapStyle, smallest: number) {
+    const s = view.scale * dpr;
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    const px = p.size * s;
+    if (px < Math.max(minPixels(p.set), smallest) * dpr) return null;
+    const x = view.x * dpr + p.x * s;
+    const y = view.y * dpr + p.y * s;
+    if (x < -px * 1.3 || y < -px * 1.2 || x > cw + px * 1.3 || y > ch + px * 1.6) return null;
+    const sp = iconSprite(p.set, p.variant, style, px, placementLook(p));
+    if (!sp) return null;
+    const k = px / sp.w;
+    return { sp, px, left: x - sp.ax * k, top: y - sp.ay * k, w: sp.canvas.width * k, h: sp.canvas.height * k };
+  }
+
+  /**
    * The icons, back to front, stamped in screen pixels from sprites made at the nearest size.
    * They are drawn on a layer of their own and laid over the map: on the atlas each icon's
    * mask first erases the icons behind it, so the land shows through its inside. With the
@@ -539,32 +634,24 @@ export class MapRenderer {
   private drawIcons(view: View, dpr: number, scene: Scene, style: MapStyle, quick: boolean) {
     // While a brush stroke is under way, icons under 8 pixels wide are left out (they come back when it ends), so painting stays quick.
     const smallest = quick ? 8 : 0;
-    if (!scene.icons.length) return;
+    if (!scene.icons.length && !scene.cliffs.length) return;
     beginIconFrame();
     const ctx = this.lctx;
-    const s = view.scale * dpr;
     const cw = this.canvas.width;
     const ch = this.canvas.height;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
+    ctx.restore();
+    this.drawCliffs(ctx, view, dpr, scene, style);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    const ox = view.x * dpr;
-    const oy = view.y * dpr;
     for (const p of scene.icons) {
-      const px = p.size * s;
-      if (px < Math.max(minPixels(p.set), smallest) * dpr) continue;
-      const x = ox + p.x * s;
-      const y = oy + p.y * s;
-      if (x < -px * 1.3 || y < -px * 1.2 || x > cw + px * 1.3 || y > ch + px * 1.6) continue;
-      const sp = iconSprite(p.set, p.variant, style, px, placementLook(p));
-      if (!sp) continue;
-      const k = px / sp.w;
-      const w = sp.canvas.width * k;
-      const h = sp.canvas.height * k;
-      const left = x - sp.ax * k;
-      const top = y - sp.ay * k;
+      const at = this.stamp(p, view, dpr, style, smallest);
+      if (!at) continue;
+      const { sp, px, left, top, w, h } = at;
       if (sp.mask && px >= 10) {
         ctx.globalCompositeOperation = 'destination-out';
         ctx.drawImage(sp.mask, left, top, w, h);

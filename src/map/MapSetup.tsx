@@ -138,7 +138,7 @@ export function MapSetup() {
                     onChange={(v) => setSettings({ ...settings, mountains: v })}
                   />
                   <Slider label="Climate" value={settings.climate} min={0} max={1} step={0.05} shown={word(CLIMATE_WORDS, settings.climate)} ends={['Cold', 'Hot']} onChange={(v) => setSettings({ ...settings, climate: v })} />
-                  <p className="text-xs text-muted">The north of the map is colder than the south. Mountains, hills, volcanoes, plateaus and cliffs are placed as if by hand, so each can be moved, resized or deleted.</p>
+                  <p className="text-xs text-muted">The north of the map is colder than the south. Mountains, hills, volcanoes, plateaus, cliffs and rivers are made as if by hand, so each can be changed or deleted.</p>
                   <Button type="submit" variant={draft ? 'secondary' : 'primary'} loading={busy === 'generate'} disabled={!!problem || busy !== null}>
                     <Shuffle className="size-4" />
                     {draft ? 'Generate again' : 'Generate'}

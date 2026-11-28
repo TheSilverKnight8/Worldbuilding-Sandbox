@@ -1,22 +1,24 @@
-import type { CliffShape, IconKind, PlacedIcon, TerrainKind } from '../world/types';
-import type { Dir } from './art/cliff';
+import type { Cliff, IconKind, PlacedIcon, TerrainKind } from '../world/types';
+import type { Dir } from './art/frame';
+import { cliffSteps } from './cliffs';
 import { across, cellAt, cellsNear, type Graph } from './graph';
 
 // Elevation (Stage 4). The ground has a painted base elevation (meters, land only; the
 // coast stays where it was painted). Terrain icons placed by hand shape it on top, and
 // win over it: "icons come before elevation". The app does not place icons from the
 // elevation (Caleb took that out after trying it): only icons placed by hand are drawn.
+// Cliffs, lines along polygon borders, step the ground (see cliffs.ts).
 
 /** New land starts as low plains. */
 export const DEFAULT_LAND_ELEVATION = 100;
 export const ELEVATION_MAX = 9000;
-type Effect = 'raise' | 'flat' | 'step' | 'none';
+type Effect = 'raise' | 'flat' | 'none';
 
 export interface KindInfo {
   label: string;
   group: 'terrain' | 'plants' | 'water';
   effect: Effect;
-  /** Cliffs and waterfalls face one of 8 directions. */
+  /** Waterfalls fall toward one of 8 directions. */
   directional: boolean;
   /** What the meters mean, and the default. */
   meters?: { label: string; value: number };
@@ -26,16 +28,14 @@ export interface KindInfo {
 
 /**
  * Widths are in cell spacings. Mountains are 5.5 (Caleb's pick after comparing 2.75, 4 and
- * 5.5 on the map); hills, volcanoes and plateaus keep their size relative to them; cliffs a
- * little smaller (Caleb). Plants are half the size they were first drawn at next to a
- * 2.75-spacing mountain.
+ * 5.5 on the map); hills, volcanoes and plateaus keep their size relative to them. Plants are
+ * half the size they were first drawn at next to a 2.75-spacing mountain.
  */
 export const KINDS: Record<IconKind, KindInfo> = {
   mountain: { label: 'Mountain', group: 'terrain', effect: 'raise', directional: false, meters: { label: 'Peak', value: 2500 }, size: 5.5 },
   hill: { label: 'Hill', group: 'terrain', effect: 'raise', directional: false, meters: { label: 'Top', value: 700 }, size: 2.8 },
   volcano: { label: 'Volcano', group: 'terrain', effect: 'raise', directional: false, meters: { label: 'Peak', value: 3000 }, size: 5.8 },
   plateau: { label: 'Plateau', group: 'terrain', effect: 'flat', directional: false, meters: { label: 'Top', value: 1200 }, size: 6 },
-  cliff: { label: 'Cliff', group: 'terrain', effect: 'step', directional: true, meters: { label: 'Drop', value: 300 }, size: 4.2 },
   deciduous: { label: 'Leafy tree', group: 'plants', effect: 'none', directional: false, size: 0.55 },
   pine: { label: 'Pine tree', group: 'plants', effect: 'none', directional: false, size: 0.6 },
   jungle: { label: 'Palm tree', group: 'plants', effect: 'none', directional: false, size: 0.58 },
@@ -49,19 +49,8 @@ export const KINDS: Record<IconKind, KindInfo> = {
 
 export const isTerrain = (k: IconKind): k is TerrainKind => KINDS[k].group === 'terrain';
 
-/** A cliff's direction is the compass direction its drop faces (180 = south, toward the viewer); its drawing is turned by that minus 180. */
-/** The nearest of the 8 compass directions to an icon's angle (0 N, 1 NE ... 7 NW); each has its own drawing. */
+/** The nearest of the 8 compass directions to a waterfall's angle (0 N, 1 NE ... 7 NW); each has its own drawing. */
 export const dirOf = (icon: { angle?: number }) => ((((Math.round((icon.angle ?? 180) / 45) % 8) + 8) % 8) as Dir);
-/** How far a cliff is turned from facing south, in degrees (the nearest of the 8 directions). */
-export const cliffTurn = (icon: { angle?: number }) => dirOf(icon) * 45 - 180;
-
-/** How a cliff's drop changes along its length (u from -0.5 at its left end to 0.5 at its right, seen with the drop toward the viewer). */
-function cliffAlong(shape: CliffShape | undefined, u: number) {
-  const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-  if (shape === 'taper-left') return smooth((u + 0.45) / 0.77);
-  if (shape === 'taper-right') return smooth((0.45 - u) / 0.77);
-  return 1;
-}
 
 /** Smooth fall-off: 1 at the center, 0 at t = 1. */
 const fall = (t: number) => (t >= 1 ? 0 : 0.5 * (1 + Math.cos(Math.PI * t)));
@@ -72,27 +61,27 @@ const smoothstep = (a: number, b: number, x: number) => {
 
 /** Where an icon's effect on the ground is centered: a little above its ground point, under the middle of the drawing. */
 function effectCenter(icon: PlacedIcon) {
-  return KINDS[icon.kind].effect === 'step' ? { x: icon.x, y: icon.y } : { x: icon.x, y: icon.y - icon.size * 0.22 };
+  return { x: icon.x, y: icon.y - icon.size * 0.22 };
 }
 
 /** How far an icon's effect reaches, in map units. */
 export function effectRadius(icon: PlacedIcon) {
   const info = KINDS[icon.kind];
   if (info.effect === 'none') return 0;
-  if (info.effect === 'step') return icon.size * 0.6;
   if (info.effect === 'flat') return icon.size * 0.8;
   return icon.size * 0.75;
 }
 
 /**
- * The final elevation of every cell: the painted base, then cliffs stepped, and hills,
+ * The final elevation of every cell: the painted base, then the cliffs' steps, and hills,
  * mountains, volcanoes and plateaus raised last, so the ground under them reads at least
  * their height. Water cells read 0.
  */
-export function computeHeights(g: Graph, land: Uint8Array, base: Int16Array, icons: PlacedIcon[]): Int16Array {
+export function computeHeights(g: Graph, land: Uint8Array, base: Int16Array, icons: PlacedIcon[], cliffs: Cliff[] = []): Int16Array {
   const h = new Float32Array(g.cellCount);
   for (let c = 0; c < g.cellCount; c++) h[c] = land[c] ? base[c] : 0;
-  const order: Effect[] = ['step', 'raise', 'flat'];
+  cliffSteps(g, land, cliffs, h);
+  const order: Effect[] = ['raise', 'flat'];
   for (const effect of order)
     for (const icon of icons) {
       const info = KINDS[icon.kind];
@@ -100,25 +89,12 @@ export function computeHeights(g: Graph, land: Uint8Array, base: Int16Array, ico
       const meters = icon.meters ?? info.meters?.value ?? 0;
       const center = effectCenter(icon);
       const R = effectRadius(icon);
-      const a = (cliffTurn(icon) * Math.PI) / 180;
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
       cellsNear(g, center.x, center.y, R, (c) => {
         if (!land[c]) return;
         const dx = g.centers[c * 2] - center.x;
         const dy = g.centers[c * 2 + 1] - center.y;
         if (effect === 'raise') h[c] = Math.max(h[c], meters * fall(Math.hypot(dx, dy) / R));
-        else if (effect === 'flat') h[c] = Math.max(h[c], meters * (1 - smoothstep(R * 0.6, R, Math.hypot(dx, dy))));
-        else {
-          // Cliff: along its line (u) and across it (v, toward the drop). The ground on the
-          // high side is higher by the drop, fading out toward the ends, and toward one end for
-          // a tapering cliff.
-          const u = dx * ca + dy * sa;
-          const v = -dx * sa + dy * ca;
-          const along = (1 - smoothstep(icon.size * 0.4, icon.size * 0.5, Math.abs(u))) * cliffAlong(icon.shape, u / icon.size);
-          const w = icon.size * 0.12;
-          h[c] = h[c] + meters * along * (1 - smoothstep(-w, w, v));
-        }
+        else h[c] = Math.max(h[c], meters * (1 - smoothstep(R * 0.6, R, Math.hypot(dx, dy))));
       });
       // The polygon right under a hill, mountain or volcano reads its full height, wherever its center is.
       if (effect === 'raise') {
@@ -133,7 +109,7 @@ export function computeHeights(g: Graph, land: Uint8Array, base: Int16Array, ico
 
 /**
  * Cells under a terrain icon placed by hand: the plants of a biome (forest, grass...) are not
- * drawn there, so they do not crowd a mountain's slopes, a plateau's top or a cliff's face.
+ * drawn there, so they do not crowd a mountain's slopes or a plateau's top.
  */
 export function underTerrain(g: Graph, icons: PlacedIcon[]): Uint8Array {
   const covered = new Uint8Array(g.cellCount);
@@ -147,19 +123,7 @@ export function underTerrain(g: Graph, icons: PlacedIcon[]): Uint8Array {
     if (info.effect === 'flat') {
       const c = effectCenter(icon);
       cellsNear(g, c.x, c.y, effectRadius(icon) * 0.6, (cell) => (covered[cell] = 1));
-      continue;
     }
-    // A cliff: the band along its rim (its face, for a drop facing the viewer).
-    const a = (cliffTurn(icon) * Math.PI) / 180;
-    const ca = Math.cos(a);
-    const sa = Math.sin(a);
-    cellsNear(g, icon.x, icon.y, icon.size * 0.55, (cell) => {
-      const dx = g.centers[cell * 2] - icon.x;
-      const dy = g.centers[cell * 2 + 1] - icon.y;
-      const u = dx * ca + dy * sa;
-      const v = -dx * sa + dy * ca;
-      if (Math.abs(u) < icon.size * 0.48 && v > -g.spacing * 0.5 && v < icon.size * 0.35) covered[cell] = 1;
-    });
   }
   return covered;
 }

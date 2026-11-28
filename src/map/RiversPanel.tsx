@@ -50,7 +50,7 @@ function KmField({ label, value, onChange }: { label: string; value: number; onC
 }
 
 const HELP: Record<RiverTool, string> = {
-  draw: 'Drag from where the river starts to where it reaches the sea. It is kept as you draw it, widening toward its mouth. Ending on another river joins it.',
+  draw: 'Drag from where the river starts to where it reaches the sea. It follows the polygon borders nearest your stroke, widening toward its mouth. Ending on another river joins it.',
   route: 'Click where a river starts: the app runs it downhill over the heightmap to the sea, a lake, the map’s edge, or another river.',
   select: 'Click a river to select it.',
 };
@@ -90,7 +90,7 @@ export function RiversPanel({ tool, newWidthKm, onNewWidthKm, selected, selected
         <h2 className="label-caps mb-3 text-muted">New river</h2>
         <KmField label="Width at the mouth" value={round(newWidthKm)} onChange={onNewWidthKm} />
         <p className="mt-3 text-xs text-muted">{HELP[tool]}</p>
-        <p className="mt-2 text-xs text-muted">Where a river crosses a cliff, a waterfall appears, facing the way the cliff does. Waterfalls can also be placed one by one in Icons mode. Lakes are water painted inside land.</p>
+        <p className="mt-2 text-xs text-muted">Where a river goes over a cliff, a waterfall appears (at the shore it falls into the water). Waterfalls can also be placed one by one in Icons mode. Lakes are water painted inside land.</p>
       </section>
     </aside>
   );

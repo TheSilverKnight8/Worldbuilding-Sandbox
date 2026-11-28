@@ -35,11 +35,11 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Placing icons (Stage 4) | Besides brushes, a way to place single icons, trees and other non-mountain icons included. |
 | Hover (Stage 4) | The polygon under the mouse is outlined. |
 | Elevation and the coast (Stage 4) | Elevation is for land only; the coast stays where it was painted. Lowering stops at sea level, and raising the sea does nothing. |
-| Cliffs, canyons and valleys (Stage 4) | Single icons you can rotate. (Valleys, passes and canyons were later dropped, below; in Stage 5 turning gave way to a drawing per direction.) |
+| Cliffs, canyons and valleys (Stage 4) | Single icons you can rotate. (Valleys, passes and canyons were later dropped, below; in Stage 5 turning gave way to a drawing per direction; after Stage 7 cliffs became lines along polygon borders, below.) |
 | Mountain size (Stage 4) | Close to Nortantis's, which are bigger than the first ones drawn here. |
 | Icon art (Stage 4) | The first code-drawn icons did not look right. Caleb's own Nortantis map is the reference for the whole look. Mountains and hills in the style of the free bonus art pack for Nortantis; every other icon in the style of the FA01-Temperate pack. Icons drawn in code after comparing with AI images (Canva), with heavier shading, slightly thicker lines and rounder peaks; then a little lighter. Caleb will ask for custom icons once the first pass is done. |
 | Terrain icons kept (Stage 4) | Mountains, hills, volcanoes, plateaus and cliffs. Valleys and passes are not needed; canyons dropped for now (cliffs cover a drop). |
-| Cliffs (Stage 4) | One side only: a tall drop. North-facing cliffs show no face. No inked sides, so cliffs placed end to end join. Caleb chooses each cliff's shape (even, fading out to one side, or broken). |
+| Cliffs (Stage 4) | One side only: a tall drop. North-facing cliffs show no face. No inked sides, so cliffs placed end to end join. Caleb chooses each cliff's shape (even, fading out to one side, or broken). (Shapes went with the cliff icon after Stage 7.) |
 | Scaling (Stage 4) | Each icon can be sized on its own, the app's own icons included: selecting one takes it over as an icon placed by hand. |
 | Sizes (Stage 4) | Mountains 5.5 cell spacings wide, each sized by its polygon as in Nortantis, varying as much as there. Plants half their first size next to the terrain. |
 | Icons from elevation (after trying Stage 4) | Taken out: placing a mountain raised the ground and the app then drew more mountains around it. The elevation and heightmap stay (painting, readout, overlay, and icons placed by hand shaping the ground); only icons placed by hand are drawn. `SPEC.md` updated to match, at Caleb's request. |
@@ -62,8 +62,12 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Polygon sizes (after Stage 7) | More varied: as Nortantis's (one evening-out pass instead of two), for maps made from now on (each map keeps the polygons it was made with). |
 | Icon size and polygon size (after Stage 7) | Mountains, hills and volcanoes follow their polygon's size more strongly, and ones placed by hand are sized by their polygon too. |
 | Placing icons (after Stage 7) | As in Nortantis: an icon goes to the middle of the polygon clicked, one per polygon. Clicking a polygon that already has one rerolls its drawing; placing another kind there replaces it. A polygon that a neighbor's icon only reaches over can take its own, the one in front drawn on top. `SPEC.md` updated with these three answers, at Caleb's request. |
-| Rivers along polygon borders (asked during Stage 7) | All rivers follow polygon borders, with the coastline wiggle, as in Nortantis: routed and generated ones, and drawn ones snapped to the nearest borders. Rivers already saved move onto borders when a world opens. To do after Stage 7. |
-| Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
+| Rivers along polygon borders (asked during Stage 7) | All rivers follow polygon borders, with the coastline wiggle, as in Nortantis: routed and generated ones, and drawn ones snapped to the nearest borders. Rivers already saved move onto borders when a world opens. Done after Stage 7. |
+| Cliffs and waterfalls (after Stage 7) | Caleb found them looking wrong: the river showed through the cliff in front of it, waterfalls did not meet their river, faces were too straight, and north-facing cliffs should have no marks beyond the rim. A river below a waterfall should leave it the way the waterfall faces, only when the river is made (rivers already on the map are left alone). |
+| Cliffs along polygon borders (after Stage 7, Caleb's idea) | Cliffs are lines along polygon borders, stored like rivers, instead of icons; waterfalls appear where a river goes over one. Made by hand like a river (snapped to the nearest borders, the drop on one side, with a button to turn it). Cliff icons on saved maps are removed. |
+| Waterfalls into water (after Stage 7) | Yes: a river reaching the sea or a lake over a cliff falls into the water. The generator also puts some cliffs along shores. |
+| Waterfall width (after Stage 7) | Waterfalls were much wider than their rivers: they are thinner now, and rivers widen up to a waterfall and narrow again after it. |
+| Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). (Cliffs along borders replaced the cliff drawings after Stage 7; waterfall icons keep their 8 directions.) |
 
 ## Platform
 
@@ -240,12 +244,12 @@ During Stage 4 the app drew hills (from 500 m) and mountains (from 1,500 m) by i
 | Hill | Raises it to at least the hill's top, falling off softly | 700 m | 2.8 |
 | Volcano | The same as a mountain | 3,000 m | 5.8 |
 | Plateau | Raises a flat top with steep edges | 1,200 m | 6 |
-| Cliff | Raises the ground on the side away from the drop by the drop, fading out at its ends (and toward one end, for a cliff that fades out) | 300 m drop | 4.2 (made a little smaller after Caleb tried it; it was 5) |
+| Cliff (an icon until after Stage 7; now a line along borders, see "Cliffs along polygon borders") | Raised the ground on the side away from the drop by the drop, fading out at its ends (and toward one end, for a cliff that faded out) | 300 m drop | 4.2 (made a little smaller after Caleb tried it; it was 5) |
 
 - Cliffs step the ground first, then hills, mountains, volcanoes and plateaus raise it, as "at least this high". The polygon right under a hill, mountain or volcano placed by hand reads its full height, and the ground falls off softly around it, whatever was painted there.
 - A terrain icon placed by hand stays where Caleb put it. Painting elevation under it never moves or removes it.
 - A biome's plants are not drawn under a terrain icon placed by hand (around a hill's, mountain's or volcano's ground point, on a plateau's top, along a cliff), so they do not crowd it.
-- **Cliffs** are one side only (Caleb). Their direction is the compass direction the drop faces, one of 8 (south, toward the viewer, for new cliffs; see Stage 5 for the drawings). A drop facing down the map shows a tall hatched rock face with cracks, ledges and loose rock at its foot; facing up the map, only the rim shows, with broken blocks along its lip and no rocks (rocks made it read as facing the viewer). Neither has inked sides: the rim thins out and the face fades at each end, so cliffs placed end to end join into one. Shape (chosen when placing, or later): even, fades out to the left, fades out to the right (as seen with the drop facing you), or broken in two.
+- **Cliffs** (as icons, until after Stage 7) were one side only (Caleb). Their direction is the compass direction the drop faces, one of 8 (south, toward the viewer, for new cliffs; see Stage 5 for the drawings). A drop facing down the map shows a tall hatched rock face with cracks, ledges and loose rock at its foot; facing up the map, only the rim shows, with broken blocks along its lip and no rocks (rocks made it read as facing the viewer). Neither has inked sides: the rim thins out and the face fades at each end, so cliffs placed end to end join into one. Shape (chosen when placing, or later): even, fades out to the left, fades out to the right (as seen with the drop facing you), or broken in two.
 - Plants placed by hand (trees, cacti, shrubs, grass, dunes, reeds) are pictures only: they change neither the biome nor the elevation.
 - Icons can be placed anywhere on the map, water included, but they only shape land.
 - **Dropped:** valleys and passes (Caleb: not needed) and canyons (Caleb: dropped for now; they did not read as precipices, and cliffs cover a drop). `SPEC.md`'s starter set was updated to match, at Caleb's request.
@@ -257,7 +261,7 @@ During Stage 4 the app drew hills (from 500 m) and mountains (from 1,500 m) by i
 | Pick | Any terrain icon, or any plant or ground icon (the same drawings as the biome icons), from the panel on the right. The panel shows each one as drawn on the map. |
 | Place | With **Place**, click a polygon (Caleb, as in Nortantis): the icon goes to its middle (a mountain's, hill's, volcano's or plateau's foot a little below, so it stands on the polygon), one per polygon. Clicking a polygon that already has an icon of that kind gives it another drawing; another kind replaces it. Which polygon an icon stands on is worked out from its foot. A polygon that a neighbor's icon only reaches over is free to take its own, and the icon in front (lower on the page) is drawn on top. The placed or rerolled icon is selected, so it can be adjusted at once. Each icon keeps its drawing. Mountains, hills and volcanoes are sized by their polygon (below), around the width set in the panel. Moving and picking icons is Select's. |
 | Select | With **Select**, click any icon, a biome's plants included (Caleb: each icon can be sized on its own). One of the app's own icons is taken over: it becomes an icon placed by hand, in the same spot, at the same size, with the same drawing, and the app leaves out its own copy. From then on it stays as Caleb leaves it, even if the biome under it changes. Deleting it leaves the spot empty; undo gives it back to the app. Icons too small to see at the current zoom cannot be picked. |
-| Settings | Width in km; height or drop in meters (terrain icons); for cliffs and waterfalls, which of the 8 directions it faces, with a small preview; for cliffs, the shape. Set before placing, or edit the selected icon. |
+| Settings | Width in km; height in meters (terrain icons); for waterfalls, which of the 8 directions it falls toward, with a small preview (cliffs had the same, and a shape, until they became lines along borders after Stage 7). Set before placing, or edit the selected icon. |
 | Move, delete | Drag an icon to move it; `Delete` or `Backspace` removes the selected one; `Escape` lets go. Clicking the map takes focus away from the panel's fields (keeping what was typed), so `Delete` then works on the map. |
 | Undo | Placing, taking over, moving, editing and deleting share the undo history with painting. Edits to the same icon less than a second apart (typing a number) are one step. |
 
@@ -317,11 +321,13 @@ Painted water inside land (Caleb), with the Land & water tools. Routed rivers en
 
 | Item | Choice |
 | --- | --- |
-| By themselves | Where a river crosses a cliff's rim, a waterfall on the rim at the crossing, facing the way the cliff faces, as wide as the larger of 0.4 times the cliff's width and three times the river's width there. They follow the cliff and the river as either changes. |
+| By themselves | Where a river goes over a cliff (since after Stage 7, see "Cliffs along polygon borders"). They follow the cliff and the river as either changes. |
 | By hand | **Waterfall** in Icons mode (under Water), with a width and a direction. |
 | Taking over | **Select** takes over a waterfall the app drew, as with a biome's plants: it becomes a placed icon facing the same way, and the app leaves out its own copy. |
 
 ### Directions: a drawing per direction (cliffs and waterfalls)
+
+(The cliff drawings below were replaced by cliffs along borders after Stage 7; waterfall icons keep theirs.)
 
 The map is seen from the south and from above, so a face always hangs straight down the page; only the rim's line changes with the direction. Turning the south-facing drawing tipped the face, rocks and water sideways, so each of the 8 directions has its own drawing (Caleb):
 
@@ -371,8 +377,9 @@ The generator is the app's own code (`src/lib/map/generate.ts`), using general t
 | Land | Landmasses as blobs whose coasts are warped by noise: 1, 2 to 4, or 10 to 19 by the setting, spread over the map. Noise adds bays, peninsulas and small islands. Plates (9, 12 or 18) are grown from random cells at random rates, each drifting its own way; where two push together hard enough (more of them on a more mountainous map) the ground rises in a ridge, so mountains follow ridges; where they pull apart it sinks a little. The sea level is set so exactly the amount of land asked for is above it. Specks of land under about 6 cells go under, and puddles under 8 cells are filled in. Land is kept a little off the map's edge. |
 | Elevation | Low along the coast, rising inland to several hundred meters; ranges on the ridges, as high as about 1,000 m (barely mountainous) to 5,000 m (very). |
 | Lakes | About one per 1,600 land cells (fewer for islands), 3 to 14 cells each, filling hollows at least 4 cells from the sea and below 1,400 m. |
-| Terrain icons | Stored as placed icons (Caleb). Plateaus (none to 4, more on a more mountainous map) on broad high ground away from the ranges. Lines of cliffs (none to 4), 2 to 4 cliffs end to end, facing north or south and fading out at both ends: slanting ones read as streaks, and east- or west-facing ones as thin lines, at the scale of a whole map (any direction can be set by hand). A few volcanoes (up to about 5, more for islands and on a more mountainous map), near a coast on a range, or on islands. Mountains from 1,500 m and hills from 450 m on and around the ranges, each sized by its polygon as Nortantis sizes its own and spaced across a range (the sizing set aside in Stage 4). |
-| Rivers | Rain (from the moisture below) falls on each polygon, is shared among its corners, and runs downhill along borders over the ground as the icons shape it; where about twenty cells' worth has gathered there is a river. Each runs along borders from its source to the sea, the map's edge, or into a bigger river (ending on one of its corners); its width at the mouth grows with the water it carries (the largest about 0.45 cell spacings). Water runs through lakes: a river ends at the shore where it flows in, and another starts where the water flows out (so none runs along a lake's edge). They are stored like rivers drawn by hand. |
+| Terrain icons | Stored as placed icons (Caleb). Plateaus (none to 4, more on a more mountainous map) on broad high ground away from the ranges. A few volcanoes (up to about 5, more for islands and on a more mountainous map), near a coast on a range, or on islands. Mountains from 1,500 m and hills from 450 m on and around the ranges, each sized by its polygon as Nortantis sizes its own and spaced across a range (the sizing set aside in Stage 4). |
+| Cliffs | Along polygon borders, stored like cliffs drawn by hand (since after Stage 7). Escarpments inland (none to about 4, more on a more mountainous map), 6 to 20 corners long, wandering one way, the drop on the lower side; none to 2 along a stretch of the shore of the sea or a lake, dropping to the water. Once the rivers are made, more along the shore at the mouths of some of the bigger rivers (1 to 5), so they fall into the water (Caleb); placed after the rivers so they do not turn them aside. Drops 150 to 500 m inland, 80 to 300 m at the shore. |
+| Rivers | Rain (from the moisture below) falls on each polygon, is shared among its corners, and runs downhill along borders over the ground as the icons shape it; where about twenty cells' worth has gathered there is a river. Each runs along borders from its source to the sea, the map's edge, or into a bigger river (ending on one of its corners); its width at the mouth grows with the water it carries (the largest about 0.45 cell spacings). Water runs through lakes: a river ends at the shore where it flows in, and another starts where the water flows out (so none runs along a lake's edge). They are stored like rivers drawn by hand. Below an inland cliff a river runs down the face and on the way the cliff faces, as rivers made by hand do. |
 | Biomes | Temperature: from the climate setting (about -6 °C in the middle of the map when cold to 34 °C when hot), about 7 °C colder per 1,000 km northward, and 6.5 °C colder per 1,000 m up. Moisture: from the sea, falling off over about 500 km inland, more near rivers and lakes, less behind high mountains to the west (winds from the west), with noise. Then: ice below -4 °C; tundra below 2 °C; pine forest (tundra if dry) below 8 °C; then by moisture desert (warm and dry), grassland, forest, pine forest (cool and wet), jungle (hot and wet); swamp on warm, wet, low ground near water. Painted with the starter biomes, by name; a lone cell takes its neighbors' biome. |
 
 ### Also changed
@@ -456,6 +463,45 @@ No change (still 6): records already held fields, free write, images and links. 
 - **Polygons**: one round of evening out instead of two (see Stage 2), for maps made from now on.
 - **Sizing by polygon** (`polygonScale` in `src/lib/map/terrain.ts`), used for mountains, hills and volcanoes, by hand and by the generator: a polygon's width between its east-most and west-most neighbors, over the map's average, stretched by 1.7 away from 1 (it was 1.21) and kept within 0.4 to 2.3 (it was 0.45 to 1.9). On the new polygons, 5% of polygons give 0.4 times the width or less and 1% about 2.1 times or more; measured in Stage 4, the old sizing gave 0.59 and 1.65.
 - **One icon per polygon** when placing (see Icons mode). Icons moved with Select still go anywhere.
+
+## Cliffs along polygon borders (after Stage 7)
+
+Cliffs were icons (Stage 4) with a drawing for each of 8 directions (Stage 5). After Stage 7 Caleb found them and their waterfalls looking wrong (above), and proposed that cliffs run along polygon borders like rivers. They replace the cliff icon (`src/lib/map/cliffs.ts`).
+
+### Cliffs
+
+| Item | Choice |
+| --- | --- |
+| Stored | `MapInfo.cliffs`: each cliff is its chain of polygon corners and its drop in meters. The drop is on the right of the line as it runs (seen on the map, north up), so reversing the chain turns it the other way. A chain whose first and last corners are the same is a ring. |
+| Drawn | Along the same wiggly borders as the coasts and rivers, so the rim zigzags with the polygons. The map is seen from the south, so the rock face hangs straight down the page from the rim: about 1.5 cell spacings deep for a 300 m drop (from 0.5 for small drops to 2.2 for big ones), uneven along the cliff and dying away at its ends. How much of the face shows follows the way each stretch faces (smoothed over about 0.6 cell spacings, so the borders' small turns do not count): all of it where the drop faces the viewer, less as it turns sideways, none where it faces away, where only the rim shows and nothing is drawn beyond it (Caleb). Hatching from the rim down, closer together where the face turns away from the light (from the upper left), cracks, and loose rock at the foot. When zoomed out only part of the hatching is drawn, so faces do not fill in. |
+| In front | A face hides what is behind it, rivers and the coast included: on the atlas it is filled as land (the paper under the land's tint), on the painterly map with a rock color, darker toward the rim. Cliffs are drawn before the icons, so an icon in front of a cliff is drawn over it. A biome's plants are kept off the faces and rims. |
+| Ground | The ground on the high side is raised by the drop: to the full drop about a polygon back from the rim (tilting a little toward it, so water just behind goes over the edge), then sloping gently back down over about 8 cell spacings. The step dies away at a cliff's ends (not on a ring). Cliffs step the ground before hills, mountains, volcanoes and plateaus raise it. |
+
+### Cliffs mode
+
+| Item | Choice |
+| --- | --- |
+| **Draw** | Drag along where the cliff runs (Caleb: like a river). It is moved onto the borders nearest the stroke, over land and the shore only, corner to corner, without loops. The drop is on the right of the way you drag; short marks show that side while drawing. A stroke more than 6 cell spacings long that ends within 1.2 of where it began makes a ring. New cliffs drop 300 m, set in the panel. A stroke shorter than 1.5 cell spacings adds nothing. |
+| **Select** | Click a cliff's rim or face. The panel gives its drop (editable), its length, **Drop the other way** and **Delete** (or `Delete`/`Backspace`); `Escape` lets go. A new cliff is selected once added. |
+| Undo | Drawing, the drop (typing is one step), turning and deleting share the undo history with everything else. |
+
+### Waterfalls
+
+| Item | Choice |
+| --- | --- |
+| Where | Every polygon corner has three borders, so a river going over a cliff runs along the rim for at least one border. A waterfall appears where a river reaches a cliff from one side and leaves it on the other; where it starts on the rim and leaves on the low side; and where it ends on a cliff at the shore of the sea or a lake, coming from the high side (it falls into the water, Caleb). It is at the corner where the river goes over. |
+| Drawn | Where the face shows, as part of the cliff: the river's water falling from the rim to the foot of the face, with streaks, spray where it lands and ripples below; the rim is left open along the stretch where the river runs to it and over. Where the face is out of sight (a drop facing away), the waterfall drawing (the lip and mist, facing the nearest of 8 directions), which **Select** in Icons mode can take over, as before. |
+| Width | Caleb: waterfalls were far wider than their rivers. A river widens over about a polygon before a waterfall to 1.8 times its width; the falling water is a little wider than that; below, the river narrows back to its own width over about a polygon. Waterfalls placed by hand keep the size set. |
+| The river below | A river made by hand (drawn or routed) or by the generator that goes over a cliff runs down the face (out of sight) to its foot, then on the way the cliff faces for about 1.2 cell spacings before following the ground (Caleb: only when a river is made; rivers already on the map are left as they are). Ground on a cliff's low side does not drain back under its face. Where a river's borders come out from under the face a little to one side, it is drawn straight down from the lip to the pool and on from there (the drawing only; the river is unchanged). |
+
+### Format
+
+- Format version **8** adds `MapInfo.cliffs`. Cliff icons from earlier formats are removed (Caleb), along with the keys of the app's waterfalls on them that were taken over. Waterfalls placed by hand, or taken over, stay.
+- In a file, cliffs with no ID, an ID used twice, no drop, or fewer than two corners are left out. When a map opens, a cliff whose corners are not on it is left out, and one with a gap is joined up along borders.
+
+### Removed
+
+The cliff icon, its 8 direction drawings and shapes, and the "Drop faces" buttons. The zigzag samples made for the cliff icons were not used.
 
 ## Data structure (agreed with Caleb)
 

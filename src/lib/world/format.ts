@@ -1,4 +1,4 @@
-import { CLIFF_SHAPES, ICON_KINDS, RECORD_KINDS, type CliffShape, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type River, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
+import { ICON_KINDS, RECORD_KINDS, type Cliff, type FieldValue, type IconKind, type MapInfo, type PlacedIcon, type RecordKind, type River, type WorldBlob, type WorldDoc, type WorldRecord } from './types';
 
 // Every world carries a format version, both in this browser's storage and in an
 // exported file. When the shape of a world changes, FORMAT_VERSION goes up and
@@ -15,9 +15,11 @@ import { CLIFF_SHAPES, ICON_KINDS, RECORD_KINDS, type CliffShape, type FieldValu
 //   7  Rivers along polygon borders: each a chain of polygon corners. A river from format 6
 //      keeps its old line (`points`) until its map is opened, when it is moved onto the
 //      borders nearest it (that needs the map's polygons, which are stored apart).
+//   8  Cliffs along polygon borders (MapInfo.cliffs), each a chain of polygon corners. Cliff
+//      icons from earlier formats are removed (Caleb), with the waterfalls the app drew on them.
 
 export const FORMAT = 'worldbuilding-sandbox-world';
-export const FORMAT_VERSION = 7;
+export const FORMAT_VERSION = 8;
 
 /** The file extension for exported worlds. They are JSON text. */
 export const FILE_SUFFIX = '.world.json';
@@ -55,11 +57,18 @@ function upgrade(raw: Record<string, unknown>, from: number): Record<string, unk
   // Format 6 rivers were lines: kept as their `points`, with no corners yet (see above).
   if (from < 7 && o.map && Array.isArray(rec(o.map).rivers))
     o = { ...o, map: { ...rec(o.map), rivers: (rec(o.map).rivers as unknown[]).map((r) => ({ ...rec(r), vertices: [] })) } };
+  // 7 -> 8: cliffs become lines along borders. Cliff icons are removed (Caleb), and so are the
+  // keys of the app's waterfalls on them that were taken over (keys starting with "w").
+  if (from < 8 && o.map) {
+    const m = rec(o.map);
+    const icons = Array.isArray(m.icons) ? (m.icons as unknown[]).filter((i) => rec(i).kind !== 'cliff') : [];
+    const hiddenAuto = Array.isArray(m.hiddenAuto) ? (m.hiddenAuto as unknown[]).filter((k) => !(typeof k === 'string' && k.startsWith('w'))) : [];
+    o = { ...o, map: { ...m, icons, hiddenAuto, cliffs: [] } };
+  }
   return o;
 }
 
 const ICON_SET = new Set<string>(ICON_KINDS);
-const SHAPES = new Set<string>(CLIFF_SHAPES);
 
 function readIcons(v: unknown): PlacedIcon[] {
   if (!Array.isArray(v)) return [];
@@ -72,7 +81,6 @@ function readIcons(v: unknown): PlacedIcon[] {
     const icon: PlacedIcon = { id: r.id, kind: r.kind as IconKind, x: r.x, y: r.y, size: r.size };
     if (isNum(r.variant) && r.variant >= 0) icon.variant = Math.floor(r.variant);
     if (isNum(r.angle)) icon.angle = r.angle;
-    if (isStr(r.shape) && SHAPES.has(r.shape)) icon.shape = r.shape as CliffShape;
     if (isNum(r.meters)) icon.meters = r.meters;
     out.push(icon);
   }
@@ -108,7 +116,24 @@ function readMap(v: unknown): MapInfo | null {
     icons: readIcons(m.icons),
     hiddenAuto: Array.isArray(m.hiddenAuto) ? (m.hiddenAuto as unknown[]).filter(isStr).slice(0, 200000) : [],
     rivers: readRivers(m.rivers, m.width, m.height),
+    cliffs: readCliffs(m.cliffs),
   };
+}
+
+/** Cliffs that make sense: an ID, a drop, and a chain of at least two polygon corners. Whether the corners are on this map is checked when it is opened. */
+function readCliffs(v: unknown): Cliff[] {
+  if (!Array.isArray(v)) return [];
+  const out: Cliff[] = [];
+  const ids = new Set<string>();
+  for (const item of v.slice(0, 5000)) {
+    const r = rec(item);
+    if (!isStr(r.id) || ids.has(r.id) || !isPos(r.meters)) continue;
+    const vertices = Array.isArray(r.vertices) ? (r.vertices as unknown[]).slice(0, 50000).filter((x): x is number => Number.isInteger(x) && (x as number) >= 0) : [];
+    if (vertices.length < 2) continue;
+    ids.add(r.id);
+    out.push({ id: r.id, vertices, meters: Math.min(r.meters, 9000) });
+  }
+  return out;
 }
 
 /**

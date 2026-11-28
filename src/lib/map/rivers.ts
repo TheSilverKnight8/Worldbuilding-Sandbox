@@ -1,7 +1,13 @@
-import type { PlacedIcon, River } from '../world/types';
+import type { Cliff, PlacedIcon, River } from '../world/types';
+import { MinHeap, borderLine, cornerKind, corners, cx, cy, edgeBetween, nearestCorner, pathBetween, type Corners, type Pt } from './borders';
+import { cliffNext, cliffZones, type CliffZones } from './cliffs';
 import { cellAt, cellsNear, type Graph } from './graph';
 import type { NoisyEdges } from './noisy';
-import { KINDS, cliffTurn, dirOf } from './terrain';
+import { KINDS } from './terrain';
+
+export { corners, pathBetween };
+/** A river's line: along each border it follows, wiggly as the coasts are. */
+export const riverLine = borderLine;
 
 // Rivers (Stage 5; along polygon borders since Caleb asked for it after Stage 7, as in
 // Nortantis). A river runs along the borders between polygons, from corner to corner, and is
@@ -9,190 +15,12 @@ import { KINDS, cliffTurn, dirOf } from './terrain';
 // corners, from source to mouth. Caleb draws a river by hand (snapped to the borders nearest
 // the stroke) or clicks a source and the app routes it downhill (Caleb: both). It ends at the
 // coast (of the sea or a lake), the map's edge, or a corner of another river, which it joins.
-// Where a river crosses a cliff, a waterfall appears.
+// Where a river crosses a cliff, a waterfall appears. A river made by hand or by the generator
+// that goes over a cliff runs down to the foot of the face below (out of sight, behind the
+// face and the falling water), then on the way the cliff faces for a while, so it leaves the
+// waterfall's pool the way the water falls (Caleb). Below a cliff by the sea or a lake, it ends
+// at the shore: the waterfall falls into the water.
 
-type Pt = [number, number];
-
-// ------------------------------------------------------------------ the polygons' corners
-
-/** The corners of the polygons, and how they connect (worked out once per map). */
-export interface Corners {
-  count: number;
-  /** Each corner's neighbors along an edge, and that edge: next/edge[start[v] .. start[v + 1]). */
-  start: Int32Array;
-  next: Int32Array;
-  edge: Int32Array;
-  /** The cells around each corner, up to 4 (-1 for none). */
-  cells: Int32Array;
-  /** 1 for corners on the map's edge. */
-  border: Uint8Array;
-}
-
-const cornersCache = new WeakMap<Graph, Corners>();
-
-export function corners(g: Graph): Corners {
-  const hit = cornersCache.get(g);
-  if (hit) return hit;
-  const count = g.vertices.length / 2;
-  const start = new Int32Array(count + 1);
-  for (let e = 0; e < g.edgeCount; e++) {
-    start[g.edges[e * 4] + 1]++;
-    start[g.edges[e * 4 + 1] + 1]++;
-  }
-  for (let v = 0; v < count; v++) start[v + 1] += start[v];
-  const fill = start.slice(0, count);
-  const next = new Int32Array(start[count]);
-  const edge = new Int32Array(start[count]);
-  const cells = new Int32Array(count * 4).fill(-1);
-  const border = new Uint8Array(count);
-  const addCell = (v: number, c: number) => {
-    if (c < 0) return;
-    for (let k = 0; k < 4; k++) {
-      if (cells[v * 4 + k] === c) return;
-      if (cells[v * 4 + k] < 0) return void (cells[v * 4 + k] = c);
-    }
-  };
-  for (let e = 0; e < g.edgeCount; e++) {
-    const a = g.edges[e * 4];
-    const b = g.edges[e * 4 + 1];
-    next[fill[a]] = b;
-    edge[fill[a]++] = e;
-    next[fill[b]] = a;
-    edge[fill[b]++] = e;
-    for (const v of [a, b]) {
-      addCell(v, g.edges[e * 4 + 2]);
-      addCell(v, g.edges[e * 4 + 3]);
-      if (g.edges[e * 4 + 3] < 0) border[v] = 1;
-    }
-  }
-  const out = { count, start, next, edge, cells, border };
-  cornersCache.set(g, out);
-  return out;
-}
-
-const cx = (g: Graph, v: number) => g.vertices[v * 2];
-const cy = (g: Graph, v: number) => g.vertices[v * 2 + 1];
-
-/** What is around a corner: 0 only water, 1 only land, 2 both (the coast). */
-function cornerKind(k: Corners, land: Uint8Array, v: number) {
-  let l = 0;
-  let w = 0;
-  for (let i = 0; i < 4; i++) {
-    const c = k.cells[v * 4 + i];
-    if (c < 0) continue;
-    if (land[c]) l++;
-    else w++;
-  }
-  return l && w ? 2 : l ? 1 : 0;
-}
-
-/** The edge between two neighboring corners, or -1. */
-function edgeBetween(k: Corners, a: number, b: number) {
-  for (let i = k.start[a]; i < k.start[a + 1]; i++) if (k.next[i] === b) return k.edge[i];
-  return -1;
-}
-
-/** The corner nearest map point (x, y) among the corners of the cell there (-1 off the map). */
-function nearestCorner(g: Graph, x: number, y: number, ok: (v: number) => boolean = () => true) {
-  const c = cellAt(g, x, y);
-  if (c < 0) return -1;
-  let best = -1;
-  let bd = Infinity;
-  for (let i = g.cellEdgeStart[c]; i < g.cellEdgeStart[c + 1]; i++) {
-    const e = g.cellEdges[i];
-    for (const v of [g.edges[e * 4], g.edges[e * 4 + 1]]) {
-      if (!ok(v)) continue;
-      const d = Math.hypot(cx(g, v) - x, cy(g, v) - y);
-      if (d < bd) {
-        bd = d;
-        best = v;
-      }
-    }
-  }
-  return best;
-}
-
-/** The shortest way along borders from corner a to corner b (both included), over corners `ok` allows; null if none within `limit` map units. */
-export function pathBetween(g: Graph, k: Corners, a: number, b: number, ok: (v: number) => boolean, limit: number): number[] | null {
-  if (a === b) return [a];
-  const dist = new Map<number, number>([[a, 0]]);
-  const prev = new Map<number, number>();
-  const heap = new MinHeap();
-  heap.push(0, a);
-  while (heap.size) {
-    const [d, v] = heap.pop();
-    if (v === b) break;
-    if (d > (dist.get(v) ?? Infinity) || d > limit) continue;
-    for (let i = k.start[v]; i < k.start[v + 1]; i++) {
-      const n = k.next[i];
-      if (n !== b && !ok(n)) continue;
-      const nd = d + Math.hypot(cx(g, n) - cx(g, v), cy(g, n) - cy(g, v));
-      if (nd < (dist.get(n) ?? Infinity)) {
-        dist.set(n, nd);
-        prev.set(n, v);
-        heap.push(nd, n);
-      }
-    }
-  }
-  if (!prev.has(b)) return null;
-  const out = [b];
-  for (let v = b; v !== a; ) {
-    v = prev.get(v)!;
-    out.push(v);
-  }
-  return out.reverse();
-}
-
-/** A binary heap of (key, value), smallest key first; equal keys in the order pushed. */
-class MinHeap {
-  private k: number[] = [];
-  private o: number[] = [];
-  private v: number[] = [];
-  private order = 0;
-  get size() {
-    return this.k.length;
-  }
-  private less(i: number, j: number) {
-    return this.k[i] < this.k[j] || (this.k[i] === this.k[j] && this.o[i] < this.o[j]);
-  }
-  private swap(i: number, j: number) {
-    [this.k[i], this.k[j]] = [this.k[j], this.k[i]];
-    [this.o[i], this.o[j]] = [this.o[j], this.o[i]];
-    [this.v[i], this.v[j]] = [this.v[j], this.v[i]];
-  }
-  push(key: number, value: number) {
-    this.k.push(key);
-    this.o.push(this.order++);
-    this.v.push(value);
-    let i = this.k.length - 1;
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (!this.less(i, p)) break;
-      this.swap(i, p);
-      i = p;
-    }
-  }
-  pop(): [number, number] {
-    const top: [number, number] = [this.k[0], this.v[0]];
-    const last = this.k.length - 1;
-    this.swap(0, last);
-    this.k.pop();
-    this.o.pop();
-    this.v.pop();
-    let i = 0;
-    for (;;) {
-      const l = i * 2 + 1;
-      const r = l + 1;
-      let m = i;
-      if (l < this.k.length && this.less(l, m)) m = l;
-      if (r < this.k.length && this.less(r, m)) m = r;
-      if (m === i) break;
-      this.swap(i, m);
-      i = m;
-    }
-    return top;
-  }
-}
 
 // ------------------------------------------------------------------ routing downhill
 
@@ -215,19 +43,21 @@ export function cornerHeights(g: Graph, land: Uint8Array, heights: ArrayLike<num
   return out;
 }
 
-const drainCache = new WeakMap<ArrayLike<number>, Int32Array>();
+const drainCache = new WeakMap<ArrayLike<number>, { cliffs: Cliff[] | undefined; down: Int32Array }>();
 
 /**
  * Where water at each corner flows next, along a border: the neighboring corner it drains
  * to; -1 at a corner on the coast (it reaches the water there); -2 at a corner on the map's
  * edge; -3 for corners in the water. Worked out by flooding up from the coast and the map's
  * edge, lowest first: water runs downhill, out of hollows over their lowest rim, and across
- * flat land toward the nearest way out.
+ * flat land toward the nearest way out. Below `cliffs`, water runs down the face and on the
+ * way the cliff faces (and the ground on the low side does not drain back under the face).
  */
-export function drainage(g: Graph, land: Uint8Array, heights: ArrayLike<number>): Int32Array {
+export function drainage(g: Graph, land: Uint8Array, heights: ArrayLike<number>, cliffs?: Cliff[]): Int32Array {
   const hit = drainCache.get(heights);
   const k = corners(g);
-  if (hit && hit.length === k.count) return hit;
+  if (hit && hit.cliffs === cliffs && hit.down.length === k.count) return hit.down;
+  const Z = cliffZones(g, cliffs);
   const h = cornerHeights(g, land, heights);
   const down = new Int32Array(k.count).fill(-3);
   const filled = new Float32Array(k.count);
@@ -240,17 +70,57 @@ export function drainage(g: Graph, land: Uint8Array, heights: ArrayLike<number>)
     filled[v] = h[v];
     heap.push(h[v], v);
   }
-  while (heap.size) {
-    const [, v] = heap.pop();
-    for (let i = k.start[v]; i < k.start[v + 1]; i++) {
-      const n = k.next[i];
-      if (down[n] !== -3 || cornerKind(k, land, n) !== 1) continue;
-      down[n] = v;
-      filled[n] = Math.max(h[n], filled[v]);
-      heap.push(filled[n], n);
+  const flood = (keepOut: boolean) => {
+    while (heap.size) {
+      const [, v] = heap.pop();
+      const z = keepOut && Z ? Z.zone[v] : -1;
+      for (let i = k.start[v]; i < k.start[v + 1]; i++) {
+        const n = k.next[i];
+        if (down[n] !== -3 || cornerKind(k, land, n) !== 1) continue;
+        // Ground on a cliff's low side does not drain back under it.
+        if (z >= 0 && Z!.zone[n] !== z && Z!.low[n] === z) continue;
+        down[n] = v;
+        filled[n] = Math.max(h[n], filled[v]);
+        heap.push(filled[n], n);
+      }
+    }
+  };
+  flood(true);
+  if (Z) {
+    // Land that could only drain past a cliff that way drains as it would without it.
+    for (let v = 0; v < k.count; v++) if (down[v] !== -3) heap.push(filled[v], v);
+    flood(false);
+    // Down the faces and on beyond them.
+    const flooded = down.slice();
+    for (let v = 0; v < k.count; v++) {
+      if (down[v] < 0 || Z.zone[v] < 0) continue;
+      const n = cliffNext(g, k, Z, v, (n) => cornerKind(k, land, n) !== 0);
+      if (n >= 0) down[v] = n;
+    }
+    // Never round in circles: where that made a loop, the water there goes as it would without the cliffs.
+    for (let changed = true; changed; ) {
+      changed = false;
+      const state = new Uint8Array(k.count);
+      for (let s0 = 0; s0 < k.count; s0++) {
+        if (state[s0]) continue;
+        const trail: number[] = [];
+        let v = s0;
+        while (v >= 0 && !state[v]) {
+          state[v] = 1;
+          trail.push(v);
+          v = down[v];
+        }
+        if (v >= 0 && state[v] === 1)
+          for (let i = trail.indexOf(v); i < trail.length; i++)
+            if (down[trail[i]] !== flooded[trail[i]]) {
+              down[trail[i]] = flooded[trail[i]];
+              changed = true;
+            }
+        for (const u of trail) state[u] = 2;
+      }
     }
   }
-  drainCache.set(heights, down);
+  drainCache.set(heights, { cliffs, down });
   return down;
 }
 
@@ -259,11 +129,11 @@ export function drainage(g: Graph, land: Uint8Array, heights: ArrayLike<number>)
  * water drains by, to the coast, the map's edge, or a corner of another river (which it
  * joins). Null if (x, y) is not on land.
  */
-export function routeRiver(g: Graph, land: Uint8Array, heights: ArrayLike<number>, x: number, y: number, others: River[]): number[] | null {
+export function routeRiver(g: Graph, land: Uint8Array, heights: ArrayLike<number>, x: number, y: number, others: River[], cliffs?: Cliff[]): number[] | null {
   const c = cellAt(g, x, y);
   if (c < 0 || !land[c]) return null;
   const k = corners(g);
-  const down = drainage(g, land, heights);
+  const down = drainage(g, land, heights, cliffs);
   let v = nearestCorner(g, x, y, (n) => down[n] >= 0 || down[n] === -1 || down[n] === -2);
   if (v < 0) return null;
   const taken = new Set<number>();
@@ -283,8 +153,10 @@ export function routeRiver(g: Graph, land: Uint8Array, heights: ArrayLike<number
  * borders nearest it: the corners it passes, joined along borders where it skips one,
  * without loops. It starts on land and ends at the first coast it reaches; it joins another
  * river at the first corner it shares with one, or at one within `joinWithin` of its end.
+ * Over one of `cliffs`, it runs down the face and on the way the cliff faces, as water
+ * would, then back to the line.
  */
-export function snapLine(g: Graph, land: Uint8Array, pts: Pt[], others: River[], joinWithin: number): number[] | null {
+export function snapLine(g: Graph, land: Uint8Array, pts: Pt[], others: River[], joinWithin: number, cliffs?: Cliff[]): number[] | null {
   const k = corners(g);
   const onLand = (v: number) => cornerKind(k, land, v) !== 0;
   // Points every third of a cell along the line, and the corner nearest each.
@@ -313,6 +185,8 @@ export function snapLine(g: Graph, land: Uint8Array, pts: Pt[], others: River[],
       if (way) path.push(...way.slice(1));
     }
   }
+  const Z = cliffZones(g, cliffs);
+  if (Z) path = belowCliffs(g, k, land, Z, path);
   // No loops: a corner passed twice cuts out what was between.
   const seen = new Map<number, number>();
   const plain: number[] = [];
@@ -360,6 +234,36 @@ export function snapLine(g: Graph, land: Uint8Array, pts: Pt[], others: River[],
     }
   }
   return path.length >= 2 ? path : null;
+}
+
+/** A line along borders that goes over a cliff, made to run down its face and on the way it faces, then back to the line (or to end at the shore). */
+function belowCliffs(g: Graph, k: Corners, land: Uint8Array, Z: CliffZones, path: number[]): number[] {
+  const usable = (n: number) => cornerKind(k, land, n) !== 0;
+  let out = path;
+  for (let i = 0; i + 1 < out.length; i++) {
+    const z = Z.zone[out[i + 1]];
+    // Over the rim: from the cliff (or its high side) to below it.
+    if (z < 0 || Z.zone[out[i]] === z || Z.low[out[i]] === z) continue;
+    const under = (n: number) => Z.zone[n] === z;
+    const chain = [out[i + 1]];
+    for (let v = chain[0]; under(v) && cornerKind(k, land, v) === 1 && chain.length < 64; ) {
+      const n = cliffNext(g, k, Z, v, usable);
+      if (n < 0 || chain.includes(n)) break;
+      chain.push(n);
+      v = n;
+    }
+    const end = chain[chain.length - 1];
+    let rest: number[] = [];
+    if (cornerKind(k, land, end) === 1) {
+      // Back to the line, at its first corner past the cliff.
+      const j = out.findIndex((u, at) => at > i + 1 && !under(u) && Z.low[u] === z);
+      const way = j >= 0 ? pathBetween(g, k, end, out[j], (n) => usable(n) && !under(n), g.spacing * 6) : null;
+      if (way) rest = [...way.slice(1), ...out.slice(j + 1)];
+    }
+    out = [...out.slice(0, i + 1), ...chain, ...rest];
+    i += chain.length - 1;
+  }
+  return out;
 }
 
 /**
@@ -412,30 +316,6 @@ export function fitRivers(g: Graph, land: Uint8Array, rivers: River[]): { rivers
 
 // ------------------------------------------------------------------ drawing
 
-/** A river's line: along each border it follows, as the coasts are drawn (wiggly). Also where each corner falls along it (index into the points). */
-export function riverLine(g: Graph, noisy: NoisyEdges, vertices: number[]): { pts: Pt[]; at: number[] } {
-  const k = corners(g);
-  const pts: Pt[] = [[cx(g, vertices[0]), cy(g, vertices[0])]];
-  const at = [0];
-  for (let i = 1; i < vertices.length; i++) {
-    const a = vertices[i - 1];
-    const b = vertices[i];
-    const e = edgeBetween(k, a, b);
-    if (e < 0) pts.push([cx(g, b), cy(g, b)]);
-    else {
-      const line = noisy.get(e);
-      const forward = g.edges[e * 4] === a;
-      const n = line.length / 2;
-      for (let j = 1; j < n; j++) {
-        const q = forward ? j : n - 1 - j;
-        pts.push([line[q * 2], line[q * 2 + 1]]);
-      }
-    }
-    at.push(pts.length - 1);
-  }
-  return { pts, at };
-}
-
 /** A river's length along its borders (straight from corner to corner), in map units. */
 export function riverLength(g: Graph, r: River) {
   let s = 0;
@@ -446,6 +326,9 @@ export function riverLength(g: Graph, r: River) {
 /** A river ready to draw: its line and its width at each point, in map units. */
 export interface RiverShape {
   id: string;
+  /** Its corners, and where each falls along its line (an index into pts). */
+  vertices: number[];
+  at: number[];
   pts: Pt[];
   widths: number[];
 }
@@ -495,7 +378,7 @@ export function riverShapes(rivers: River[], g: Graph, noisy: NoisyEdges): River
       joins.forEach((j, t) => j.into === i && j.s <= run[k] && (w2 += full(t) ** 2));
       return Math.sqrt(w2);
     });
-    return { id: r.id, pts, widths };
+    return { id: r.id, vertices: r.vertices, at: lines[i].at, pts, widths };
   });
 }
 
@@ -531,59 +414,6 @@ export function underRivers(g: Graph, shapes: RiverShape[]): Uint8Array {
       }
     }
   return out;
-}
-
-/** A waterfall the app draws where a river crosses a cliff. */
-export interface AutoWaterfall {
-  x: number;
-  y: number;
-  size: number;
-  /** The cliff's direction (the waterfall falls the way its drop faces). */
-  angle: number;
-  key: string;
-}
-
-/** The key that names the waterfall where a river crosses a cliff (see MapInfo.hiddenAuto). */
-export const waterfallKey = (river: string, cliff: string) => `w${river}:${cliff}`;
-
-/**
- * Where a river crosses a cliff, a waterfall: on the cliff's rim, facing the way its drop
- * faces (the nearest of 8 directions, as the cliff is drawn), sized to its face. Ones Caleb
- * took over are left out.
- */
-export function riverWaterfalls(shapes: RiverShape[], icons: PlacedIcon[], hidden: ReadonlySet<string>): AutoWaterfall[] {
-  const out: AutoWaterfall[] = [];
-  for (const cliff of icons) {
-    if (cliff.kind !== 'cliff') continue;
-    const turn = cliffTurn(cliff);
-    const a = (turn * Math.PI) / 180;
-    const half = cliff.size * 0.42;
-    const p: Pt = [cliff.x - Math.cos(a) * half, cliff.y - Math.sin(a) * half];
-    const q: Pt = [cliff.x + Math.cos(a) * half, cliff.y + Math.sin(a) * half];
-    for (const r of shapes) {
-      const key = waterfallKey(r.id, cliff.id);
-      if (hidden.has(key)) continue;
-      for (let i = 1; i < r.pts.length; i++) {
-        const hit = crossing(r.pts[i - 1], r.pts[i], p, q);
-        if (!hit) continue;
-        // As tall as the cliff's face, and wider than the river.
-        out.push({ x: hit[0], y: hit[1], size: Math.max(cliff.size * 0.4, r.widths[i] * 3), angle: dirOf(cliff) * 45, key });
-        break;
-      }
-    }
-  }
-  return out;
-}
-
-/** Where segments a-b and c-d cross, or null. */
-function crossing(a: Pt, b: Pt, c: Pt, d: Pt): Pt | null {
-  const r = [b[0] - a[0], b[1] - a[1]];
-  const s = [d[0] - c[0], d[1] - c[1]];
-  const den = r[0] * s[1] - r[1] * s[0];
-  if (Math.abs(den) < 1e-12) return null;
-  const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den;
-  const u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + r[0] * t, a[1] + r[1] * t] : null;
 }
 
 /** The default width at the mouth for a new river, in map units. */

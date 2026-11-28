@@ -101,6 +101,22 @@ export interface MapInfo {
   hiddenAuto: string[];
   /** Rivers (Stage 5), drawn by hand or routed downhill by the app, along polygon borders. */
   rivers: River[];
+  /** Cliffs, along polygon borders (format 8; before, cliffs were icons). */
+  cliffs: Cliff[];
+}
+
+/**
+ * A cliff (Caleb, after Stage 7: along the borders between polygons, like a river, rather than
+ * an icon): its chain of polygon corners. The drop is on the right of the line as it runs from
+ * its first corner to its last (seen on the map, north up), so reversing the chain turns the
+ * drop the other way. A cliff whose first and last corners are the same is a ring.
+ */
+export interface Cliff {
+  id: string;
+  /** Its chain of polygon corners (vertex indices of the map's graph). */
+  vertices: number[];
+  /** How far it drops, in meters. */
+  meters: number;
 }
 
 /**
@@ -124,17 +140,16 @@ export interface River {
 /** How a biome shows on the fantasy atlas (Stage 3): a set of icons drawn in code, or nothing. */
 export type IconSet = 'deciduous' | 'pine' | 'jungle' | 'cactus' | 'shrub' | 'grass' | 'dunes' | 'reeds' | 'none';
 
-/** Elevation-based geography (Stage 4): the terrain icons. (Valleys, canyons and passes were dropped at Caleb's request.) */
-export type TerrainKind = 'hill' | 'mountain' | 'volcano' | 'plateau' | 'cliff';
-
-/** A cliff's shape along its length, chosen when it is placed. */
-export type CliffShape = 'even' | 'taper-left' | 'taper-right' | 'broken';
-export const CLIFF_SHAPES: readonly CliffShape[] = ['even', 'taper-left', 'taper-right', 'broken'];
+/**
+ * Elevation-based geography (Stage 4): the terrain icons. (Valleys, canyons and passes were
+ * dropped at Caleb's request; cliffs became lines along polygon borders, see Cliff.)
+ */
+export type TerrainKind = 'hill' | 'mountain' | 'volcano' | 'plateau';
 
 /** Anything that can be placed as a single icon: terrain, a biome's plants and ground, or a waterfall (Stage 5). */
 export type IconKind = TerrainKind | Exclude<IconSet, 'none'> | 'waterfall';
 
-export const TERRAIN_KINDS: readonly TerrainKind[] = ['mountain', 'hill', 'volcano', 'plateau', 'cliff'];
+export const TERRAIN_KINDS: readonly TerrainKind[] = ['mountain', 'hill', 'volcano', 'plateau'];
 export const ICON_KINDS: readonly IconKind[] = [...TERRAIN_KINDS, 'deciduous', 'pine', 'jungle', 'cactus', 'shrub', 'grass', 'dunes', 'reeds', 'waterfall'];
 
 /**
@@ -151,11 +166,9 @@ export interface PlacedIcon {
   size: number;
   /** Which of the kind's drawings. */
   variant?: number;
-  /** Cliffs: the compass direction the drop faces, in degrees (0 north, 90 east, 180 south, toward the viewer). A waterfall taken over from a cliff keeps the cliff's. */
+  /** Waterfalls: the compass direction the water falls toward, in degrees (0 north, 90 east, 180 south, toward the viewer). One taken over from a cliff keeps the way it fell there. */
   angle?: number;
-  /** Cliffs: the shape along its length. */
-  shape?: CliffShape;
-  /** Meters: the top of a hill, mountain, volcano or plateau; how far a cliff drops. */
+  /** Meters: the top of a hill, mountain, volcano or plateau. */
   meters?: number;
 }
 

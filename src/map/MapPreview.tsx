@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { GEN_BIOMES, type GeneratedMap } from '../lib/map/generate';
 import { starterLook } from '../lib/map/biomes';
+import { cliffDrawings, cliffWaterfalls, riversAtFalls } from '../lib/map/cliffs';
 import { buildCoast } from '../lib/map/coast';
 import type { Graph } from '../lib/map/graph';
 import { onSpritesReady } from '../lib/map/icons';
@@ -18,16 +19,18 @@ export function MapPreview({ graph, seed, generated, style }: { graph: Graph; se
     // The generator paints with the starter biomes; slot n is GEN_BIOMES[n - 1].
     const looks = [null, ...GEN_BIOMES.map((name) => starterLook(name))];
     const rivers = riverShapes(generated.rivers, graph, noisy);
+    const falls = cliffWaterfalls(graph, noisy, generated.land, rivers, generated.cliffs, new Set());
     return {
       graph,
       land: generated.land,
       biome: generated.biome,
       coast: buildCoast(graph, generated.land, noisy),
       looks,
-      icons: mapIcons(graph, generated.land, generated.biome, looks, seed, generated.icons, new Set(), rivers),
-      heights: computeHeights(graph, generated.land, generated.elevation, generated.icons),
+      icons: mapIcons(graph, generated.land, generated.biome, looks, seed, generated.icons, new Set(), rivers, generated.cliffs, falls),
+      heights: computeHeights(graph, generated.land, generated.elevation, generated.icons, generated.cliffs),
       overlay: false,
-      rivers,
+      rivers: riversAtFalls(rivers, falls, graph.spacing),
+      cliffs: cliffDrawings(generated.cliffs, graph, noisy, falls),
       noisy,
     };
   }, [graph, seed, generated]);

@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trash2, X } from 'lucide-react';
-import { Button, IconButton, Input, Select, cx } from '../components/ui';
+import { Button, IconButton, Input, cx } from '../components/ui';
 import { frameOf, iconSprite, placementLook } from '../lib/map/icons';
 import { KINDS, SIZED_BY_POLYGON, dirOf } from '../lib/map/terrain';
-import { CLIFF_SHAPES, ICON_KINDS, TERRAIN_KINDS, type CliffShape, type IconKind, type PlacedIcon } from '../lib/world/types';
+import { ICON_KINDS, TERRAIN_KINDS, type IconKind, type PlacedIcon } from '../lib/world/types';
 
-/** Settings for an icon: width in km, meters (height or drop), a cliff's or waterfall's direction (compass degrees, one of 8) and a cliff's shape. */
+/** Settings for an icon: width in km, meters (a height), and a waterfall's direction (compass degrees, one of 8). */
 export interface IconSettings {
   sizeKm: number;
   meters?: number;
   angle?: number;
-  shape?: CliffShape;
 }
 
 interface Props {
@@ -29,14 +28,13 @@ interface Props {
 
 const PLANTS = ICON_KINDS.filter((k) => KINDS[k].group === 'plants');
 const WATER = ICON_KINDS.filter((k) => KINDS[k].group === 'water');
-const SHAPE_LABELS: Record<CliffShape, string> = { even: 'Even', 'taper-left': 'Fades out to the left', 'taper-right': 'Fades out to the right', broken: 'Broken in two' };
 const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
 const COMPASS_SHORT = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 /** The 8 directions laid out as on a compass (null: the middle). */
 const COMPASS_GRID = [7, 0, 1, 6, null, 2, 5, 4, 3] as const;
 
 /** A small picture of an icon, drawn with the same code as the map's. */
-function Preview({ kind, variant = 0, angle, shape, size = 30 }: { kind: IconKind; variant?: number; angle?: number; shape?: CliffShape; size?: number }) {
+function Preview({ kind, variant = 0, angle, size = 30 }: { kind: IconKind; variant?: number; angle?: number; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = ref.current!;
@@ -46,7 +44,7 @@ function Preview({ kind, variant = 0, angle, shape, size = 30 }: { kind: IconKin
     const ctx = c.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, size, size);
-    const look = placementLook({ set: kind, angle, shape });
+    const look = placementLook({ set: kind, angle });
     const f = frameOf(kind, look);
     // As wide as fits, keeping the drawing's shape; its box centered.
     const w = (size - 4) / Math.max(f.w, f.h);
@@ -56,7 +54,7 @@ function Preview({ kind, variant = 0, angle, shape, size = 30 }: { kind: IconKin
     const x = size / 2 - w * (f.w / 2 - f.ax);
     const y = size / 2 - w * (f.h / 2 - f.ay);
     ctx.drawImage(sp.canvas, x - sp.ax * k, y - sp.ay * k, sp.canvas.width * k, sp.canvas.height * k);
-  }, [kind, variant, angle, shape, size]);
+  }, [kind, variant, angle, size]);
   return <canvas ref={ref} style={{ width: size, height: size }} aria-hidden />;
 }
 
@@ -123,9 +121,9 @@ function Settings({ kind, settings, onChange, sizedByPolygon = false }: { kind: 
       {info.meters && <NumberField label={info.meters.label} unit="m" value={settings.meters ?? info.meters.value} min={0} max={9000} step={50} onChange={(v) => onChange({ ...settings, meters: v })} />}
       {info.directional && (
         <div className="space-y-1">
-          <span className="block text-sm">{kind === 'cliff' ? 'Drop faces' : 'Falls toward'}</span>
+          <span className="block text-sm">Falls toward</span>
           <div className="flex items-center gap-3">
-            <div role="radiogroup" aria-label={kind === 'cliff' ? 'Drop faces' : 'Falls toward'} className="grid grid-cols-3 gap-1">
+            <div role="radiogroup" aria-label="Falls toward" className="grid grid-cols-3 gap-1">
               {COMPASS_GRID.map((d, i) =>
                 d === null ? (
                   <span key={i} />
@@ -145,24 +143,9 @@ function Settings({ kind, settings, onChange, sizedByPolygon = false }: { kind: 
                 ),
               )}
             </div>
-            <Preview kind={kind} angle={dir * 45} shape={settings.shape} size={64} />
+            <Preview kind={kind} angle={dir * 45} size={64} />
           </div>
         </div>
-      )}
-      {kind === 'cliff' && (
-        <>
-          <label className="block space-y-1">
-            <span className="block text-sm">Shape</span>
-            <Select value={settings.shape ?? 'even'} aria-label="Shape" className="h-9 w-full text-sm" onChange={(e) => onChange({ ...settings, shape: e.target.value as CliffShape })}>
-              {CLIFF_SHAPES.map((s) => (
-                <option key={s} value={s}>
-                  {SHAPE_LABELS[s]}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <p className="text-xs text-muted">Left and right are as seen with the drop facing you. A drop facing away shows only the rim.</p>
-        </>
       )}
     </div>
   );
