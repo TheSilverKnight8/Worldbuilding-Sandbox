@@ -22,8 +22,9 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 - Saved locally in the browser: autosave, plus manual export and import of a world as a file. No backup reminders.
 - Up to 3 worlds; worlds can be deleted.
 - The app's frame and menus use the cream, navy and red style of my other apps. The map and the entry pages follow the map style toggle.
-- Entries have structured fields plus a free-write section. A detail gets a structured field only if I would filter or compare by it. Everything else is free write.
-- Images can be attached to entries. Entries can link to each other. Search across entries.
+- Entries have structured fields plus a free-write section. A detail gets a structured field only if I would filter or compare by it. Everything else is free write. Free write has simple formatting: headings, bold, italic, lists and quotes.
+- Images can be attached to entries, as a gallery whose first image is the entry's cover. Entries link to each other inside the free write (typing [[), and each entry lists what links to it. Search across entries (names, free write and fields), with filters by type and by field.
+- A world has two views, switched in the header: the map and the entries.
 - Not every map item needs a written entry.
 - A name changes only when I edit it.
 - No bloat.
@@ -69,7 +70,7 @@ Personal worldbuilding app, vibecoded with the same workflow as the other vibeco
 
 Built in (a fixed set): the first version's types and fields, minus everything that existed for the simulation.
 
-- **Settlement**: name; nation (or independent); dominant culture; demographic breakdown by culture; population; technology level; founded date. Biome and elevation are shown from the map.
+- **Settlement**: name; nation (or independent); dominant culture; demographic breakdown by culture; population; technology level (named eras in order: Stone age, Bronze age, Iron age, Medieval, Renaissance, Early modern, Industrial, Modern); founded date. Biome and elevation are shown from the map.
 - **Nation**: name; dominant culture; government type; capital; founded date. Shown, not stored: its settlements, territory, total population, relations.
 - **Culture**: name; exactly one language.
 - **Language**: common letters or sounds, ones to avoid, typical syllable patterns, stress or emphasis, example names, plus free write.
@@ -83,6 +84,8 @@ Built in (a fixed set): the first version's types and fields, minus everything t
 - **Timeline event**: date; title; the entries involved; free write. Entries show the events that involve them.
 - **Diplomacy strand**: see Diplomacy.
 
+Kinds and types (a nation's government type, a faction's type, a feature's or landmark's kind) are picked from a starter list I can add to: anything typed in is offered afterwards in that world.
+
 Place entries (settlements, landmarks, features) show the elevation at their spot, read from the map, and can be filtered and compared by it.
 
 ## Diplomacy
@@ -93,7 +96,7 @@ Place entries (settlements, landmarks, features) show the elevation at their spo
 
 ## Timelines
 
-- Real-world calendar. Dates to the day.
+- Real-world calendar. Dates to the day, including years before 1 (BC). The same dates are used for entries' founding dates.
 - As many timelines of my own as I like.
 - No playback.
 

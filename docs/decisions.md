@@ -58,7 +58,7 @@ The first version's Stage 2 (a painted square grid, branch `stage-2-map`) is not
 | Technology level (Stage 7) | Named eras, in order, so it can be filtered as a range. |
 | Kinds and types (Stage 7) | A starter list you can add to: a value typed in is offered afterwards in that world. |
 | Dates (Stage 7) | The real-world calendar to the day; years before 1 allowed (BC). |
-| Images (Stage 7) | A gallery with a cover. |
+| Images (Stage 7) | A gallery with a cover. `SPEC.md` updated with these Stage 7 answers, at Caleb's request. |
 | Rivers along polygon borders (asked during Stage 7) | All rivers follow polygon borders, with the coastline wiggle, as in Nortantis: routed and generated ones, and drawn ones snapped to the nearest borders. Rivers already saved move onto borders when a world opens. To do after Stage 7. |
 | Directions (Stage 5) | Cliffs in all 8 compass directions, each a drawing of its own (turning the south-facing drawing tipped its face sideways), chosen with 8 buttons; cliffs already placed at other angles are drawn as the nearest. Waterfalls in all 8 too, and one appears at every cliff a river crosses, facing away included (lip and mist only). |
 
